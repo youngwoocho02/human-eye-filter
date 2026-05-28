@@ -7,6 +7,7 @@ type Options struct {
 	Mode          string
 	Tool          string
 	Keep          string
+	Focus         string
 	RawOnFail     bool
 }
 
@@ -18,6 +19,7 @@ func DefaultOptions() Options {
 		Mode:          "auto",
 		Tool:          "",
 		Keep:          "error",
+		Focus:         "",
 		RawOnFail:     true,
 	}
 }

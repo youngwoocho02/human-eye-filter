@@ -58,7 +58,7 @@ func Reduce(input string, options Options) (string, error) {
 	case "unity":
 		body, sections = reduceKeywordText(input, options, unityKeywords())
 	case "scm":
-		body, sections = reduceKeywordText(input, options, scmKeywords())
+		body, sections = reduceSCM(input, options)
 	default:
 		body, sections = reduceText(input, options)
 	}
@@ -164,7 +164,7 @@ func reduceText(input string, options Options) (string, []string) {
 func reduceKeywordText(input string, options Options, keywords []string) (string, []string) {
 	lines := nonEmptyLines(input)
 	lines = collapseDuplicateLines(lines)
-	priority, rest := splitPriorityLinesWithContext(lines, keywords)
+	priority, rest := splitPriorityLinesWithContext(lines, append(focusKeywords(options), keywords...))
 
 	limit := options.MaxLines
 	if limit <= 0 {
@@ -207,12 +207,16 @@ func reduceGrep(input string, options Options) (string, []string) {
 		paths = append(paths, path)
 	}
 	sort.Strings(paths)
+	root := commonPathPrefix(paths)
 
 	out := []string{}
+	if root != "" {
+		out = append(out, "$root="+root)
+	}
 	perFile := 4
 	for _, path := range paths {
 		items := grouped[path]
-		out = append(out, fmt.Sprintf("%s (%d)", path, len(items)))
+		out = append(out, fmt.Sprintf("%s (%d)", displayPath(path, root), len(items)))
 		for _, item := range takeMatches(items, perFile) {
 			out = append(out, fmt.Sprintf("  %s: %s", item.line, item.text))
 		}
@@ -232,6 +236,7 @@ func reduceGrep(input string, options Options) (string, []string) {
 func reducePaths(input string, options Options) (string, []string) {
 	lines := collapseDuplicateLines(nonEmptyLines(input))
 	tree := map[string][]string{}
+	originalDirs := []string{}
 	for _, line := range lines {
 		normalized := strings.ReplaceAll(strings.TrimSpace(line), "\\", "/")
 		if !pathLikePattern.MatchString(normalized) {
@@ -239,6 +244,7 @@ func reducePaths(input string, options Options) (string, []string) {
 		}
 		dir, file := splitPath(normalized)
 		tree[dir] = append(tree[dir], file)
+		originalDirs = append(originalDirs, dir)
 	}
 
 	dirs := make([]string, 0, len(tree))
@@ -246,12 +252,16 @@ func reducePaths(input string, options Options) (string, []string) {
 		dirs = append(dirs, dir)
 	}
 	sort.Strings(dirs)
+	root := commonPathPrefix(originalDirs)
 
 	out := []string{}
+	if root != "" {
+		out = append(out, "$root="+root)
+	}
 	for _, dir := range dirs {
 		files := tree[dir]
 		sort.Strings(files)
-		out = append(out, fmt.Sprintf("%s/ (%d)", dir, len(files)))
+		out = append(out, fmt.Sprintf("%s/ (%d)", displayPath(dir, root), len(files)))
 		for _, file := range take(files, 8) {
 			out = append(out, "  "+file)
 		}
@@ -261,6 +271,71 @@ func reducePaths(input string, options Options) (string, []string) {
 	}
 
 	return strings.Join(out, "\n"), []string{"grouped paths"}
+}
+
+func reduceSCM(input string, options Options) (string, []string) {
+	lines := collapseDuplicateLines(nonEmptyLines(input))
+	focus := focusKeywords(options)
+	sections := map[string][]string{
+		"conflicts":      {},
+		"content change": {},
+		"checkout only":  {},
+		"added":          {},
+		"deleted/moved":  {},
+		"branch/change":  {},
+		"focused":        {},
+		"other":          {},
+	}
+	order := []string{"conflicts", "content change", "checkout only", "added", "deleted/moved", "branch/change", "focused", "other"}
+
+	for _, line := range lines {
+		lower := strings.ToLower(line)
+		switch {
+		case strings.Contains(lower, "conflict") || strings.Contains(lower, "merge needed"):
+			sections["conflicts"] = append(sections["conflicts"], line)
+		case strings.HasPrefix(strings.TrimSpace(line), "CO+CH") || strings.HasPrefix(strings.TrimSpace(line), "CH"):
+			sections["content change"] = append(sections["content change"], line)
+		case strings.HasPrefix(strings.TrimSpace(line), "CO "):
+			sections["checkout only"] = append(sections["checkout only"], line)
+		case strings.HasPrefix(strings.TrimSpace(line), "AD") || strings.HasPrefix(strings.TrimSpace(line), "??") || strings.HasPrefix(strings.TrimSpace(line), "A "):
+			sections["added"] = append(sections["added"], line)
+		case strings.HasPrefix(strings.TrimSpace(line), "DE") || strings.HasPrefix(strings.TrimSpace(line), "LD") || strings.HasPrefix(strings.TrimSpace(line), "MV") || strings.HasPrefix(strings.TrimSpace(line), "D "):
+			sections["deleted/moved"] = append(sections["deleted/moved"], line)
+		case strings.Contains(lower, "branch") || strings.Contains(lower, "changeset") || strings.Contains(lower, "changelist"):
+			sections["branch/change"] = append(sections["branch/change"], line)
+		case isSCMStatusLine(line):
+			sections["content change"] = append(sections["content change"], line)
+		case containsAny(lower, focus):
+			sections["focused"] = append(sections["focused"], line)
+		default:
+			sections["other"] = append(sections["other"], line)
+		}
+	}
+
+	limit := options.MaxLines
+	if limit <= 0 {
+		limit = DefaultOptions().MaxLines
+	}
+	out := []string{}
+	for _, name := range order {
+		items := sections[name]
+		if len(items) == 0 || len(out) >= limit {
+			continue
+		}
+		remaining := limit - len(out)
+		if remaining <= 1 {
+			break
+		}
+		out = append(out, "## "+name)
+		remaining--
+		taken := take(items, remaining)
+		out = append(out, taken...)
+		if len(items) > len(taken) && len(out) < limit {
+			out = append(out, fmt.Sprintf("... %d more %s lines", len(items)-len(taken), name))
+		}
+	}
+
+	return strings.Join(out, "\n"), []string{"scm sections", "checkout/change split"}
 }
 
 func reduceJSON(input string, options Options) (string, []string) {
@@ -381,6 +456,11 @@ func isStackTraceLine(line string) bool {
 }
 
 func prioritizeLines(lines []string, options Options) []string {
+	if focus := focusKeywords(options); len(focus) > 0 {
+		priority, rest := splitPriorityLines(lines, focus)
+		lines = append(priority, rest...)
+	}
+
 	switch strings.ToLower(options.Keep) {
 	case "all":
 		return lines
@@ -394,6 +474,28 @@ func prioritizeLines(lines []string, options Options) []string {
 		priority, rest := splitPriorityLines(lines, []string{"error", "exception", "failed", "fatal", "denied"})
 		return append(priority, rest...)
 	}
+}
+
+func focusKeywords(options Options) []string {
+	parts := strings.Split(options.Focus, ",")
+	keywords := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.ToLower(strings.TrimSpace(part))
+		if trimmed == "" {
+			continue
+		}
+		keywords = append(keywords, trimmed)
+	}
+	return keywords
+}
+
+func containsAny(value string, keywords []string) bool {
+	for _, keyword := range keywords {
+		if strings.Contains(value, keyword) {
+			return true
+		}
+	}
+	return false
 }
 
 func unityKeywords() []string {
@@ -537,4 +639,64 @@ func splitPath(path string) (string, string) {
 		return ".", path
 	}
 	return path[:index], path[index+1:]
+}
+
+func commonPathPrefix(paths []string) string {
+	if len(paths) < 2 {
+		return ""
+	}
+
+	cleaned := make([]string, 0, len(paths))
+	for _, path := range paths {
+		normalized := strings.ReplaceAll(strings.TrimSpace(path), "\\", "/")
+		if normalized == "" {
+			continue
+		}
+		dir, _ := splitPath(normalized)
+		if dir == "." {
+			dir = normalized
+		}
+		cleaned = append(cleaned, strings.TrimRight(dir, "/"))
+	}
+	if len(cleaned) < 2 {
+		return ""
+	}
+
+	prefixParts := strings.Split(cleaned[0], "/")
+	for _, path := range cleaned[1:] {
+		parts := strings.Split(path, "/")
+		max := len(prefixParts)
+		if len(parts) < max {
+			max = len(parts)
+		}
+		i := 0
+		for i < max && prefixParts[i] == parts[i] {
+			i++
+		}
+		prefixParts = prefixParts[:i]
+		if len(prefixParts) == 0 {
+			return ""
+		}
+	}
+
+	root := strings.Join(prefixParts, "/")
+	if len(root) < 24 || !strings.Contains(root, "/") {
+		return ""
+	}
+	return root
+}
+
+func displayPath(path, root string) string {
+	normalized := strings.ReplaceAll(path, "\\", "/")
+	if root == "" {
+		return normalized
+	}
+	if normalized == root {
+		return "$root"
+	}
+	prefix := strings.TrimRight(root, "/") + "/"
+	if strings.HasPrefix(normalized, prefix) {
+		return "$root/" + strings.TrimPrefix(normalized, prefix)
+	}
+	return normalized
 }

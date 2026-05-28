@@ -90,6 +90,89 @@ func TestSCMChangedLinesArePriority(t *testing.T) {
 	}
 }
 
+func TestSCMReducerSplitsCheckoutOnlyFromContentChanges(t *testing.T) {
+	options := DefaultOptions()
+	options.Tool = "cm"
+	output, err := Reduce("CO Assets/Locked.asset\nCO+CH Assets/Changed.asset\nCH Assets/Edited.cs\n", options)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, want := range []string{"## content change", "CO+CH Assets/Changed.asset", "CH Assets/Edited.cs", "## checkout only", "CO Assets/Locked.asset"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected %q in output:\n%s", want, output)
+		}
+	}
+}
+
+func TestFocusKeywordIsKeptInLogReducer(t *testing.T) {
+	options := DefaultOptions()
+	options.Mode = "unity"
+	options.Focus = "DemoScope"
+	output, err := Reduce("noise\nDemoScope blocked DLC_01\nanother noise\n", options)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(output, "DemoScope blocked DLC_01") {
+		t.Fatalf("expected focus line:\n%s", output)
+	}
+}
+
+func TestSCMFocusDoesNotOverrideConflictOrChangeSections(t *testing.T) {
+	options := DefaultOptions()
+	options.Tool = "cm"
+	options.Focus = "DemoScope"
+	output, err := Reduce("CONFLICT DemoScope.asset\nCO+CH Assets/DemoScope.asset\nplain DemoScope note\n", options)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, want := range []string{"## conflicts", "CONFLICT DemoScope.asset", "## content change", "CO+CH Assets/DemoScope.asset", "## focused", "plain DemoScope note"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected %q in output:\n%s", want, output)
+		}
+	}
+}
+
+func TestGrepReducerAliasesCommonRoot(t *testing.T) {
+	input := strings.Join([]string{
+		"C:/WorkSpace/ProjectMaid/Assets/Accelix/Scripts/A/Foo.cs:10: first",
+		"C:/WorkSpace/ProjectMaid/Assets/Accelix/Scripts/B/Bar.cs:20: second",
+	}, "\n")
+
+	output, err := Reduce(input, DefaultOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, want := range []string{"$root=C:/WorkSpace/ProjectMaid/Assets/Accelix/Scripts", "$root/A/Foo.cs", "$root/B/Bar.cs"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected %q in output:\n%s", want, output)
+		}
+	}
+}
+
+func TestPathReducerAliasesCommonRoot(t *testing.T) {
+	options := DefaultOptions()
+	options.Mode = "paths"
+	input := strings.Join([]string{
+		"C:/WorkSpace/ProjectMaid/Assets/Accelix/Scripts/A/Foo.cs",
+		"C:/WorkSpace/ProjectMaid/Assets/Accelix/Scripts/B/Bar.cs",
+	}, "\n")
+
+	output, err := Reduce(input, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, want := range []string{"$root=C:/WorkSpace/ProjectMaid/Assets/Accelix/Scripts", "$root/A/", "$root/B/"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected %q in output:\n%s", want, output)
+		}
+	}
+}
+
 func TestPathReducerSkipsNonPathLines(t *testing.T) {
 	options := DefaultOptions()
 	options.Mode = "paths"

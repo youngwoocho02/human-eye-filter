@@ -34,6 +34,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error) 
 	flags.StringVar(&options.Mode, "mode", options.Mode, "reducer mode: auto, text, json, paths, grep, unity, scm")
 	flags.StringVar(&options.Tool, "tool", options.Tool, "optional tool hint, such as rg, grep, git, cm, unity-cli, unity-scanner")
 	flags.StringVar(&options.Keep, "keep", options.Keep, "priority to keep: error, warning, path, all")
+	flags.StringVar(&options.Focus, "focus", options.Focus, "comma-separated keywords to keep before generic samples")
 	flags.BoolVar(&options.RawOnFail, "raw-on-fail", options.RawOnFail, "print raw input if reduction fails")
 
 	if err := flags.Parse(args); err != nil {
