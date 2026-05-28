@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"unicode/utf8"
 
@@ -31,6 +32,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error) 
 	flags.IntVar(&options.MaxLines, "max-lines", options.MaxLines, "maximum output lines")
 	flags.IntVar(&options.MaxChars, "max-chars", options.MaxChars, "maximum output characters")
 	flags.Int64Var(&options.MaxInputBytes, "max-input-bytes", options.MaxInputBytes, "maximum raw input bytes to read before reducing")
+	flags.IntVar(&options.AutoMinLines, "auto-min-lines", options.AutoMinLines, "minimum raw lines before run-auto reduces output")
+	flags.IntVar(&options.AutoMinChars, "auto-min-chars", options.AutoMinChars, "minimum raw characters before run-auto reduces output")
 	flags.StringVar(&options.Mode, "mode", options.Mode, "reducer mode: auto, text, json, paths, grep, unity, scm")
 	flags.StringVar(&options.Tool, "tool", options.Tool, "optional tool hint, such as rg, grep, git, cm, unity-cli, unity-scanner")
 	flags.StringVar(&options.Keep, "keep", options.Keep, "priority to keep: error, warning, path, all")
@@ -45,12 +48,31 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error) 
 	}
 
 	rest := flags.Args()
+	if len(rest) > 0 && rest[0] == "hook" {
+		if len(rest) != 2 || rest[1] != "powershell" {
+			return 2, errors.New("usage: sieve hook powershell")
+		}
+		_, err := io.WriteString(stdout, powershellHookScript())
+		if err != nil {
+			return 1, err
+		}
+		return 0, nil
+	}
+
 	if len(rest) > 0 && rest[0] == "run" {
 		if len(rest) < 3 || rest[1] != "--" {
 			return 2, errors.New("usage: sieve run -- <command> [args...]")
 		}
 
-		return runCommand(rest[2:], stdout, stderr, options)
+		return runCommand(rest[2:], stdout, stderr, options, false)
+	}
+
+	if len(rest) > 0 && rest[0] == "run-auto" {
+		if len(rest) < 3 || rest[1] != "--" {
+			return 2, errors.New("usage: sieve run-auto -- <command> [args...]")
+		}
+
+		return runCommand(rest[2:], stdout, stderr, options, true)
 	}
 
 	input, err := readBounded(stdin, options.MaxInputBytes)
@@ -76,7 +98,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error) 
 	return 0, nil
 }
 
-func runCommand(command []string, stdout, stderr io.Writer, options sieve.Options) (int, error) {
+func runCommand(command []string, stdout, stderr io.Writer, options sieve.Options, auto bool) (int, error) {
 	if options.Tool == "" {
 		options.Tool = command[0]
 	}
@@ -90,6 +112,13 @@ func runCommand(command []string, stdout, stderr io.Writer, options sieve.Option
 
 	err := cmd.Run()
 	combined := out.String()
+	if auto && !shouldReduce(combined, options) {
+		if _, writeErr := io.WriteString(stdout, combined); writeErr != nil {
+			return 1, writeErr
+		}
+		return commandExitCode(err)
+	}
+
 	reduced, reduceErr := sieve.Reduce(combined, options)
 	if reduceErr != nil {
 		if options.RawOnFail {
@@ -105,17 +134,43 @@ func runCommand(command []string, stdout, stderr io.Writer, options sieve.Option
 		}
 	}
 
-	exitCode := 0
+	return commandExitCode(err)
+}
+
+func commandExitCode(err error) (int, error) {
 	if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
-			exitCode = exitErr.ExitCode()
+			return exitErr.ExitCode(), nil
 		} else {
 			return 1, err
 		}
 	}
 
-	return exitCode, nil
+	return 0, nil
+}
+
+func shouldReduce(output string, options sieve.Options) bool {
+	if output == "" {
+		return false
+	}
+	if options.AutoMinChars > 0 && len([]rune(output)) >= options.AutoMinChars {
+		return true
+	}
+	minLines := options.AutoMinLines
+	if minLines <= 0 {
+		minLines = sieve.DefaultOptions().AutoMinLines
+	}
+	lines := 0
+	for _, line := range strings.Split(strings.ReplaceAll(output, "\r\n", "\n"), "\n") {
+		if strings.TrimSpace(line) != "" {
+			lines++
+		}
+		if lines >= minLines {
+			return true
+		}
+	}
+	return false
 }
 
 func readBounded(reader io.Reader, maxBytes int64) ([]byte, error) {
@@ -195,4 +250,34 @@ func trimStringValidUTF8(input string) string {
 		input = input[:len(input)-1]
 	}
 	return input
+}
+
+func powershellHookScript() string {
+	return `# EagleEye PowerShell hook helpers.
+# Policy: short command output stays raw; long output is reduced through sieve run-auto.
+
+function Invoke-EagleEye {
+    sieve run-auto -- @args
+}
+
+function eye {
+    sieve run-auto -- @args
+}
+
+function eye-rg {
+    sieve --tool rg run-auto -- rg @args
+}
+
+function eye-git {
+    sieve --tool git run-auto -- git @args
+}
+
+function eye-cm {
+    sieve --tool cm run-auto -- cm @args
+}
+
+function eye-unity {
+    sieve --tool unity-cli run-auto -- unity-cli @args
+}
+`
 }

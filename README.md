@@ -73,6 +73,7 @@ sieve --tool rg < search.txt
 sieve --tool git < status.txt
 sieve --tool unity-cli < console.txt
 sieve --tool cm --focus DemoScope < status.txt
+sieve run-auto -- rg -n --glob '*.cs' 'Foo' Assets
 ```
 
 `--tool` is a hint, not a hard parser. It maps common tools to the nearest
@@ -82,10 +83,40 @@ shape reducer, so new tools can still work through `auto` detection.
 useful when the important line is not an error, such as `DemoScope`, `Addressables`,
 `ProjectBuildConfig`, or a specific content id.
 
+## Agent Hook Policy
+
+Do not reduce every command output unconditionally. Short output should stay
+raw, because agents need exact small results. Use `run-auto` for hooks:
+
+```powershell
+sieve run-auto -- <command> [args...]
+```
+
+`run-auto` keeps short output unchanged and reduces only when the output crosses
+`--auto-min-lines` or `--auto-min-chars`.
+
+Generate PowerShell helpers:
+
+```powershell
+sieve hook powershell
+```
+
+The generated helpers provide:
+
+- `eye <command>`: threshold-based generic wrapper.
+- `eye-rg ...`: `rg` output with grep reducer hint.
+- `eye-git ...`: Git output with SCM reducer hint.
+- `eye-cm ...`: PlasticSCM output with SCM reducer hint.
+- `eye-unity ...`: Unity CLI output with Unity log reducer hint.
+
+This keeps RTK-style automatic intervention thin: command policy can suggest or
+enforce `eye-*` wrappers, while output reduction remains centralized here.
+
 ## Limits
 
 ```powershell
 sieve --max-lines 120 --max-chars 10000 < output.txt
+sieve --auto-min-lines 80 --auto-min-chars 8000 run-auto -- <command>
 ```
 
 Raw input is bounded before reduction:

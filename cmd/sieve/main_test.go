@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"strings"
 	"testing"
+
+	"github.com/youngwoocho02/token-sieve/internal/sieve"
 )
 
 func TestReadBoundedTrimsUTF8(t *testing.T) {
@@ -34,4 +37,46 @@ func TestBoundedOutputStringTrimsUTF8(t *testing.T) {
 	if !strings.Contains(text, "가") {
 		t.Fatalf("expected first full rune to remain: %q", text)
 	}
+}
+
+func TestShouldReduceUsesLineThreshold(t *testing.T) {
+	options := sieveOptionsForTest()
+	options.AutoMinLines = 2
+	options.AutoMinChars = 1000
+
+	if !shouldReduce("one\ntwo\n", options) {
+		t.Fatal("expected two non-empty lines to trigger reduction")
+	}
+}
+
+func TestShouldReduceKeepsShortOutputRaw(t *testing.T) {
+	options := sieveOptionsForTest()
+	options.AutoMinLines = 10
+	options.AutoMinChars = 1000
+
+	if shouldReduce("short output\n", options) {
+		t.Fatal("expected short output to stay raw")
+	}
+}
+
+func TestHookPowershellPrintsHelpers(t *testing.T) {
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	code, err := run([]string{"hook", "powershell"}, strings.NewReader(""), stdout, stderr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d stderr=%s", code, stderr.String())
+	}
+	output := stdout.String()
+	for _, want := range []string{"function eye", "run-auto", "function eye-rg", "function eye-cm"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected %q in hook output:\n%s", want, output)
+		}
+	}
+}
+
+func sieveOptionsForTest() sieve.Options {
+	return sieve.DefaultOptions()
 }
