@@ -9,13 +9,14 @@ import (
 	"strings"
 )
 
-var grepLinePattern = regexp.MustCompile(`^(.+?):(\d+)(?::\d+)?:\s?(.*)$`)
+var ansiEscapePattern = regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]`)
+var grepLinePattern = regexp.MustCompile(`^(.+?):(\d+)(?::(\d+))?:\s?(.*)$`)
 var pathLikePattern = regexp.MustCompile(`(?i)(^|[A-Za-z]:[\\/]|[./\\])[\w .@~+\-()[\]{}:]+[\\/][\w .@~+\-()[\]{}:]+\.[A-Za-z0-9_]+$`)
 var scmStatusLinePattern = regexp.MustCompile(`(?i)^\s*(?:\?\?|[MADRCU?!]|CH|CO|CO\+CH|LD|LM|MV|AD|PR|DE|RP)\b`)
 
 type grepMatch struct {
-	line string
-	text string
+	location string
+	text     string
 }
 
 type stats struct {
@@ -29,6 +30,7 @@ type stats struct {
 
 func Reduce(input string, options Options) (string, error) {
 	input = strings.TrimPrefix(input, "\ufeff")
+	input = normalizeInput(input)
 	if strings.TrimSpace(input) == "" {
 		return "", nil
 	}
@@ -199,7 +201,11 @@ func reduceGrep(input string, options Options) (string, []string) {
 			other = append(other, line)
 			continue
 		}
-		grouped[matches[1]] = append(grouped[matches[1]], grepMatch{line: matches[2], text: matches[3]})
+		location := matches[2]
+		if matches[3] != "" {
+			location += ":" + matches[3]
+		}
+		grouped[matches[1]] = append(grouped[matches[1]], grepMatch{location: location, text: matches[4]})
 	}
 
 	paths := make([]string, 0, len(grouped))
@@ -218,7 +224,7 @@ func reduceGrep(input string, options Options) (string, []string) {
 		items := grouped[path]
 		out = append(out, fmt.Sprintf("%s (%d)", displayPath(path, root), len(items)))
 		for _, item := range takeMatches(items, perFile) {
-			out = append(out, fmt.Sprintf("  %s: %s", item.line, item.text))
+			out = append(out, fmt.Sprintf("  %s: %s", item.location, item.text))
 		}
 		if len(items) > perFile {
 			out = append(out, fmt.Sprintf("  ... %d more", len(items)-perFile))
@@ -496,6 +502,12 @@ func containsAny(value string, keywords []string) bool {
 		}
 	}
 	return false
+}
+
+func normalizeInput(input string) string {
+	input = strings.TrimPrefix(input, "\ufeff")
+	input = ansiEscapePattern.ReplaceAllString(input, "")
+	return strings.ReplaceAll(input, "\x00", "")
 }
 
 func unityKeywords() []string {

@@ -153,6 +153,44 @@ func TestGrepReducerAliasesCommonRoot(t *testing.T) {
 	}
 }
 
+func TestGrepReducerKeepsRipgrepColumn(t *testing.T) {
+	output, err := Reduce("Assets/Foo.cs:10:24: matched text\n", DefaultOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(output, "10:24: matched text") {
+		t.Fatalf("expected line and column location:\n%s", output)
+	}
+}
+
+func TestReducerStripsANSIEscapeSequencesBeforeParsing(t *testing.T) {
+	output, err := Reduce("\x1b[31mAssets/Foo.cs:10: error: boom\x1b[0m\n", DefaultOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, want := range []string{"Assets/Foo.cs (1)", "10: error: boom"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected %q in output:\n%s", want, output)
+		}
+	}
+	if strings.Contains(output, "\x1b[") {
+		t.Fatalf("expected ANSI escapes to be stripped:\n%s", output)
+	}
+}
+
+func TestReducerDropsNULBytesBeforeParsing(t *testing.T) {
+	output, err := Reduce("Assets/Foo.cs:10:\x00 error after nul\n", DefaultOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if strings.Contains(output, "\x00") || !strings.Contains(output, "error after nul") {
+		t.Fatalf("expected NUL byte to be removed:\n%s", output)
+	}
+}
+
 func TestPathReducerAliasesCommonRoot(t *testing.T) {
 	options := DefaultOptions()
 	options.Mode = "paths"
