@@ -1,6 +1,6 @@
-# token-sieve design
+# Human Eye Filter design
 
-`token-sieve` is not a command rewriter. It is an output reducer.
+`Human Eye Filter` is not a command rewriter. It is an output reducer.
 
 The long-term target is to accept output from many common developer tools and
 return a smaller representation without losing the lines that matter for

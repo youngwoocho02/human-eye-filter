@@ -1,4 +1,4 @@
-package sieve
+package humaneye
 
 type Options struct {
 	MaxLines      int

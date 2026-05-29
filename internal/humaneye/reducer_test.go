@@ -1,4 +1,4 @@
-package sieve
+package humaneye
 
 import (
 	"strings"
@@ -30,7 +30,7 @@ func TestReduceSamplesJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, want := range []string{`"_sieve_omitted_items":2`, `"message":"ok"`, "mode=json"} {
+	for _, want := range []string{`"_humaneye_omitted_items":2`, `"message":"ok"`, "mode=json"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("expected %q in output:\n%s", want, output)
 		}

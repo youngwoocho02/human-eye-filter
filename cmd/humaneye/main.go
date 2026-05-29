@@ -13,8 +13,10 @@ import (
 	"sync"
 	"unicode/utf8"
 
-	"github.com/youngwoocho02/token-sieve/internal/sieve"
+	"github.com/youngwoocho02/human-eye-filter/internal/humaneye"
 )
+
+var Version = "dev"
 
 func main() {
 	code, err := run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr)
@@ -25,10 +27,12 @@ func main() {
 }
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error) {
-	flags := flag.NewFlagSet("sieve", flag.ContinueOnError)
+	flags := flag.NewFlagSet("humaneye", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 
-	options := sieve.DefaultOptions()
+	options := humaneye.DefaultOptions()
+	var showVersion bool
+	flags.BoolVar(&showVersion, "version", false, "print version and exit")
 	flags.IntVar(&options.MaxLines, "max-lines", options.MaxLines, "maximum output lines")
 	flags.IntVar(&options.MaxChars, "max-chars", options.MaxChars, "maximum output characters")
 	flags.Int64Var(&options.MaxInputBytes, "max-input-bytes", options.MaxInputBytes, "maximum raw input bytes to read before reducing")
@@ -47,10 +51,20 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error) 
 		return 2, err
 	}
 
+	if showVersion {
+		fmt.Fprintln(stdout, Version)
+		return 0, nil
+	}
+
 	rest := flags.Args()
+	if len(rest) > 0 && rest[0] == "version" {
+		fmt.Fprintln(stdout, Version)
+		return 0, nil
+	}
+
 	if len(rest) > 0 && rest[0] == "hook" {
 		if len(rest) != 2 || rest[1] != "powershell" {
-			return 2, errors.New("usage: sieve hook powershell")
+			return 2, errors.New("usage: humaneye hook powershell")
 		}
 		_, err := io.WriteString(stdout, powershellHookScript())
 		if err != nil {
@@ -61,7 +75,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error) 
 
 	if len(rest) > 0 && rest[0] == "run" {
 		if len(rest) < 3 || rest[1] != "--" {
-			return 2, errors.New("usage: sieve run -- <command> [args...]")
+			return 2, errors.New("usage: humaneye run -- <command> [args...]")
 		}
 
 		return runCommand(rest[2:], stdout, stderr, options, false)
@@ -69,7 +83,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error) 
 
 	if len(rest) > 0 && rest[0] == "run-auto" {
 		if len(rest) < 3 || rest[1] != "--" {
-			return 2, errors.New("usage: sieve run-auto -- <command> [args...]")
+			return 2, errors.New("usage: humaneye run-auto -- <command> [args...]")
 		}
 
 		return runCommand(rest[2:], stdout, stderr, options, true)
@@ -80,7 +94,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error) 
 		return 1, err
 	}
 
-	output, err := sieve.Reduce(string(input), options)
+	output, err := humaneye.Reduce(string(input), options)
 	if err != nil {
 		if options.RawOnFail {
 			_, _ = stdout.Write(input)
@@ -98,7 +112,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error) 
 	return 0, nil
 }
 
-func runCommand(command []string, stdout, stderr io.Writer, options sieve.Options, auto bool) (int, error) {
+func runCommand(command []string, stdout, stderr io.Writer, options humaneye.Options, auto bool) (int, error) {
 	if options.Tool == "" {
 		options.Tool = command[0]
 	}
@@ -119,7 +133,7 @@ func runCommand(command []string, stdout, stderr io.Writer, options sieve.Option
 		return commandExitCode(err)
 	}
 
-	reduced, reduceErr := sieve.Reduce(combined, options)
+	reduced, reduceErr := humaneye.Reduce(combined, options)
 	if reduceErr != nil {
 		if options.RawOnFail {
 			if _, writeErr := io.WriteString(stdout, combined); writeErr != nil {
@@ -150,7 +164,7 @@ func commandExitCode(err error) (int, error) {
 	return 0, nil
 }
 
-func shouldReduce(output string, options sieve.Options) bool {
+func shouldReduce(output string, options humaneye.Options) bool {
 	if output == "" {
 		return false
 	}
@@ -159,7 +173,7 @@ func shouldReduce(output string, options sieve.Options) bool {
 	}
 	minLines := options.AutoMinLines
 	if minLines <= 0 {
-		minLines = sieve.DefaultOptions().AutoMinLines
+		minLines = humaneye.DefaultOptions().AutoMinLines
 	}
 	lines := 0
 	for _, line := range strings.Split(strings.ReplaceAll(output, "\r\n", "\n"), "\n") {
@@ -175,7 +189,7 @@ func shouldReduce(output string, options sieve.Options) bool {
 
 func readBounded(reader io.Reader, maxBytes int64) ([]byte, error) {
 	if maxBytes <= 0 {
-		maxBytes = sieve.DefaultOptions().MaxInputBytes
+		maxBytes = humaneye.DefaultOptions().MaxInputBytes
 	}
 
 	limited := io.LimitReader(reader, maxBytes+1)
@@ -188,7 +202,7 @@ func readBounded(reader io.Reader, maxBytes int64) ([]byte, error) {
 	}
 
 	input = trimValidUTF8(input[:maxBytes])
-	input = append(input, []byte(fmt.Sprintf("\n... <sieve raw input truncated at %d bytes>\n", maxBytes))...)
+	input = append(input, []byte(fmt.Sprintf("\n... <humaneye raw input truncated at %d bytes>\n", maxBytes))...)
 	return input, nil
 }
 
@@ -201,7 +215,7 @@ type boundedOutput struct {
 
 func newBoundedOutput(maxBytes int64) *boundedOutput {
 	if maxBytes <= 0 {
-		maxBytes = sieve.DefaultOptions().MaxInputBytes
+		maxBytes = humaneye.DefaultOptions().MaxInputBytes
 	}
 	return &boundedOutput{maxBytes: maxBytes}
 }
@@ -242,7 +256,7 @@ func (b *boundedOutput) String() string {
 		return text
 	}
 
-	return text + fmt.Sprintf("\n... <sieve raw command output truncated; omitted %d bytes>\n", b.trimmed)
+	return text + fmt.Sprintf("\n... <humaneye raw command output truncated; omitted %d bytes>\n", b.trimmed)
 }
 
 func trimStringValidUTF8(input string) string {
@@ -253,31 +267,31 @@ func trimStringValidUTF8(input string) string {
 }
 
 func powershellHookScript() string {
-	return `# EagleEye PowerShell hook helpers.
-# Policy: short command output stays raw; long output is reduced through sieve run-auto.
+	return `# HumanEye PowerShell hook helpers.
+# Policy: short command output stays raw; long output is reduced through humaneye run-auto.
 
-function Invoke-EagleEye {
-    sieve run-auto -- @args
+function Invoke-HumanEye {
+    humaneye run-auto -- @args
 }
 
 function eye {
-    sieve run-auto -- @args
+    humaneye run-auto -- @args
 }
 
 function eye-rg {
-    sieve --tool rg run-auto -- rg @args
+    humaneye --tool rg run-auto -- rg @args
 }
 
 function eye-git {
-    sieve --tool git run-auto -- git @args
+    humaneye --tool git run-auto -- git @args
 }
 
 function eye-cm {
-    sieve --tool cm run-auto -- cm @args
+    humaneye --tool cm run-auto -- cm @args
 }
 
 function eye-unity {
-    sieve --tool unity-cli run-auto -- unity-cli @args
+    humaneye --tool unity-cli run-auto -- unity-cli @args
 }
 `
 }

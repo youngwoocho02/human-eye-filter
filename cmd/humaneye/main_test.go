@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/youngwoocho02/token-sieve/internal/sieve"
+	"github.com/youngwoocho02/human-eye-filter/internal/humaneye"
 )
 
 func TestReadBoundedTrimsUTF8(t *testing.T) {
@@ -40,7 +40,7 @@ func TestBoundedOutputStringTrimsUTF8(t *testing.T) {
 }
 
 func TestShouldReduceUsesLineThreshold(t *testing.T) {
-	options := sieveOptionsForTest()
+	options := humaneyeOptionsForTest()
 	options.AutoMinLines = 2
 	options.AutoMinChars = 1000
 
@@ -50,7 +50,7 @@ func TestShouldReduceUsesLineThreshold(t *testing.T) {
 }
 
 func TestShouldReduceKeepsShortOutputRaw(t *testing.T) {
-	options := sieveOptionsForTest()
+	options := humaneyeOptionsForTest()
 	options.AutoMinLines = 10
 	options.AutoMinChars = 1000
 
@@ -77,6 +77,6 @@ func TestHookPowershellPrintsHelpers(t *testing.T) {
 	}
 }
 
-func sieveOptionsForTest() sieve.Options {
-	return sieve.DefaultOptions()
+func humaneyeOptionsForTest() humaneye.Options {
+	return humaneye.DefaultOptions()
 }

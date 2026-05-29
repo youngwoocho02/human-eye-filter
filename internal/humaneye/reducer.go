@@ -1,4 +1,4 @@
-package sieve
+package humaneye
 
 import (
 	"encoding/json"
@@ -376,7 +376,7 @@ func reduceJSONValue(value any, depth int) any {
 			result[key] = reduceJSONValue(typed[key], depth+1)
 		}
 		if len(keys) > 24 {
-			result["_sieve_omitted_keys"] = len(keys) - 24
+			result["_humaneye_omitted_keys"] = len(keys) - 24
 		}
 		return result
 	case []any:
@@ -385,7 +385,7 @@ func reduceJSONValue(value any, depth int) any {
 			result = append(result, reduceJSONValue(item, depth+1))
 		}
 		if len(typed) > 8 {
-			result = append(result, map[string]any{"_sieve_omitted_items": len(typed) - 8})
+			result = append(result, map[string]any{"_humaneye_omitted_items": len(typed) - 8})
 		}
 		return result
 	case string:
@@ -525,7 +525,7 @@ func enforceLimits(input string, options Options) string {
 		maxLines = DefaultOptions().MaxLines
 	}
 	if len(lines) > maxLines {
-		lines = append(lines[:maxLines], fmt.Sprintf("... <sieve truncated %d lines>", len(lines)-maxLines))
+		lines = append(lines[:maxLines], fmt.Sprintf("... <humaneye truncated %d lines>", len(lines)-maxLines))
 	}
 
 	output := strings.Join(lines, "\n")
@@ -535,7 +535,7 @@ func enforceLimits(input string, options Options) string {
 	}
 	if runeLen(output) > maxChars {
 		omitted := runeLen(output) - maxChars
-		output = truncateRunes(output, maxChars) + fmt.Sprintf("\n... <sieve truncated %d chars>", omitted)
+		output = truncateRunes(output, maxChars) + fmt.Sprintf("\n... <humaneye truncated %d chars>", omitted)
 	}
 
 	return output
@@ -558,7 +558,7 @@ func formatSummary(s stats) string {
 	if sections == "" {
 		sections = "none"
 	}
-	return fmt.Sprintf("\n\n--- sieve summary ---\nmode=%s lines=%d->%d chars=%d->%d kept=%s\n",
+	return fmt.Sprintf("\n\n--- humaneye summary ---\nmode=%s lines=%d->%d chars=%d->%d kept=%s\n",
 		s.Mode,
 		s.InputLines,
 		s.OutputLines,
