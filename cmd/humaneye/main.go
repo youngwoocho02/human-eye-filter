@@ -52,13 +52,13 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error) 
 	}
 
 	if showVersion {
-		fmt.Fprintln(stdout, Version)
+		_, _ = fmt.Fprintln(stdout, Version)
 		return 0, nil
 	}
 
 	rest := flags.Args()
 	if len(rest) > 0 && rest[0] == "version" {
-		fmt.Fprintln(stdout, Version)
+		_, _ = fmt.Fprintln(stdout, Version)
 		return 0, nil
 	}
 

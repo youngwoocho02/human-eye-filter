@@ -514,10 +514,6 @@ func unityKeywords() []string {
 	return []string{"error", "exception", "failed", "stacktrace", "assert", "shader", "build failed", "compilation", " at ", "at ", "--- end of stack trace"}
 }
 
-func scmKeywords() []string {
-	return []string{"error", "conflict", "modified", "changed", " ch ", " ch", "co+ch", "deleted", "added", "moved", "branch", "changeset", "pending", "created", "??", " m ", " d "}
-}
-
 func enforceLimits(input string, options Options) string {
 	lines := strings.Split(strings.TrimRight(input, "\r\n"), "\n")
 	maxLines := options.MaxLines
