@@ -21,13 +21,13 @@ go install github.com/youngwoocho02/human-eye-filter/cmd/humaneye@latest
 Windows (PowerShell):
 
 ```powershell
-irm https://github.com/youngwoocho02/human-eye-filter/releases/latest/download/install.ps1 | iex
+irm https://raw.githubusercontent.com/youngwoocho02/human-eye-filter/master/install.ps1 | iex
 ```
 
 Linux / macOS:
 
 ```sh
-curl -fsSL https://github.com/youngwoocho02/human-eye-filter/releases/latest/download/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/youngwoocho02/human-eye-filter/master/install.sh | sh
 ```
 
 Build from source:
