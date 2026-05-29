@@ -63,14 +63,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error) 
 	}
 
 	if len(rest) > 0 && rest[0] == "hook" {
-		if len(rest) != 2 || rest[1] != "powershell" {
-			return 2, errors.New("usage: humaneye hook powershell")
-		}
-		_, err := io.WriteString(stdout, powershellHookScript())
-		if err != nil {
-			return 1, err
-		}
-		return 0, nil
+		return runHook(rest[1:], stdin, stdout, stderr)
 	}
 
 	if len(rest) > 0 && rest[0] == "run" {
@@ -264,34 +257,4 @@ func trimStringValidUTF8(input string) string {
 		input = input[:len(input)-1]
 	}
 	return input
-}
-
-func powershellHookScript() string {
-	return `# HumanEye PowerShell hook helpers.
-# Policy: short command output stays raw; long output is reduced through humaneye run-auto.
-
-function Invoke-HumanEye {
-    humaneye run-auto -- @args
-}
-
-function eye {
-    humaneye run-auto -- @args
-}
-
-function eye-rg {
-    humaneye --tool rg run-auto -- rg @args
-}
-
-function eye-git {
-    humaneye --tool git run-auto -- git @args
-}
-
-function eye-cm {
-    humaneye --tool cm run-auto -- cm @args
-}
-
-function eye-unity {
-    humaneye --tool unity-cli run-auto -- unity-cli @args
-}
-`
 }

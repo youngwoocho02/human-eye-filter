@@ -112,6 +112,24 @@ The generated helpers:
 - `eye-cm ...` — PlasticSCM output with the SCM reducer hint.
 - `eye-unity ...` — Unity CLI output with the Unity log reducer hint.
 
+### `hook claude` / `hook codex`
+
+The built-in `PreToolUse` hook handler. Reads the hook event JSON on stdin and prints the rewrite JSON on stdout, wrapping the Bash-tool command as `humaneye run-auto -- bash -c '<cmd>'` (using its own absolute path). Claude Code and OpenAI Codex share one schema, so the two subcommands behave identically. It fails open (emits nothing) on bad input, background commands, and already-wrapped commands, so it can never block the Bash tool. This is what a config registers as the hook command — no external script needed.
+
+### `hook install` / `hook uninstall`
+
+Registers (or removes) the hook in each agent's config, idempotently:
+
+```sh
+humaneye hook install --agent all      # claude + codex + opencode
+humaneye hook install --agent claude
+humaneye hook uninstall --agent all
+```
+
+- **claude** — adds a `PreToolUse` Bash hook calling `humaneye hook claude` to `~/.claude/settings.json`.
+- **codex** — appends a `[[hooks.PreToolUse]]` block calling `humaneye hook codex` to `~/.codex/config.toml`.
+- **opencode** — writes a `tool.execute.before` plugin and registers it in `~/.config/opencode/opencode.json`.
+
 ## Options
 
 | Flag                | Default   | Description                                                       |
@@ -132,9 +150,13 @@ The generated helpers:
 
 ## Agent Integration
 
-The intended use is a hook that wraps the agent's Bash-tool commands so their output is reduced before it reaches the model.
+The intended use is a hook that wraps the agent's Bash-tool commands so their output is reduced before it reaches the model. Set it up in one command:
 
-- **Claude Code** and **OpenAI Codex** use a `PreToolUse` hook (same hook JSON schema) that rewrites the Bash-tool command to `humaneye run-auto -- bash -c '<cmd>'`.
+```sh
+humaneye hook install --agent all
+```
+
+- **Claude Code** and **OpenAI Codex** use a `PreToolUse` hook (same hook JSON schema) that rewrites the Bash-tool command to `humaneye run-auto -- bash -c '<cmd>'`. The hook handler is built in (`humaneye hook claude` / `humaneye hook codex`).
 - **OpenCode** uses a plugin `tool.execute.before` hook to do the same.
 
 Because the wrapper uses `run-auto`, short output stays raw and only large output is reduced. Only the Bash tool is covered — the Read and Grep tools and the PowerShell tool are not wrapped, so their results are unaffected.
