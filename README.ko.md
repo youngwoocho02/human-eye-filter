@@ -107,6 +107,20 @@ updated $t1
 
 출력이 너무 크면 앞부분, 중요한 줄, 끝부분만 남기고 생략량을 표시합니다.
 
+## RTK와의 차이
+
+RTK는 command proxy입니다. 에이전트 훅이 `git status` 같은 명령을 `rtk git status`로 바꾸고, RTK가 그 명령을 명령별 필터로 처리합니다.
+
+`hef`는 단순 출력 필터입니다. 명령을 대체하지 않고, 도구별 command wrapper도 필요 없고, 사용자가 mode를 고르지 않아도 됩니다. 원래 명령은 그대로 실행되고, `hef`는 stdout에 반복되는 패턴만 접습니다.
+
+```sh
+# RTK 방식
+agent command -> hook rewrite -> rtk <command> -> command-specific filter
+
+# HEF 방식
+agent command -> original command runs -> stdout | hef -> pattern filters
+```
+
 ## 업데이트
 
 ```sh

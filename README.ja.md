@@ -107,6 +107,20 @@ updated $t1
 
 出力が大きすぎる場合は、先頭、重要行、末尾だけを残し、省略量を表示します。
 
+## RTK との違い
+
+RTK は command proxy です。エージェントのフックが `git status` のようなコマンドを `rtk git status` に書き換え、RTK がそのコマンドをコマンド別フィルターへ送ります。
+
+`hef` は単純な出力フィルターです。コマンドを置き換えず、ツール別 command wrapper も不要で、ユーザーが mode を選ぶ必要もありません。元のコマンドはそのまま実行され、`hef` は stdout の繰り返しパターンだけを畳みます。
+
+```sh
+# RTK style
+agent command -> hook rewrite -> rtk <command> -> command-specific filter
+
+# HEF style
+agent command -> original command runs -> stdout | hef -> pattern filters
+```
+
 ## アップデート
 
 ```sh

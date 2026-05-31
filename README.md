@@ -107,6 +107,20 @@ updated $t1
 
 For very large output, `hef` keeps the head, important lines, and tail, then reports how much was omitted.
 
+## Compared to RTK
+
+RTK is a command proxy. Its agent hooks rewrite commands such as `git status` into `rtk git status`, then RTK routes that command through command-specific filters.
+
+`hef` is a plain output filter. It does not replace the command, does not need per-tool command wrappers, and does not ask the user to pick a mode. The original command runs normally; `hef` only folds repeated patterns in stdout.
+
+```sh
+# RTK-style flow
+agent command -> hook rewrite -> rtk <command> -> command-specific filter
+
+# HEF-style flow
+agent command -> original command runs -> stdout | hef -> pattern filters
+```
+
 ## Update
 
 ```sh
