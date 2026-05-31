@@ -53,43 +53,30 @@ some-command | hef
 ```
 ## 어떻게 줄어드나
 
-### 검색 결과
+`hef`는 결과가 실제로 짧아질 때만 패턴 필터를 적용합니다. 주요 케이스는 아래와 같습니다.
 
-긴 `path:line:text` 출력은 파일별로 묶입니다.
+### 경로와 검색 출력
+
+검색 결과는 파일별로 묶고, 파일 목록은 디렉터리별로 묶습니다.
 
 ```text
-C:/Work/Project/Assets/Foo.cs:10: TODO: split setup
-C:/Work/Project/Assets/Foo.cs:48: FIXME: stale state
-C:/Work/Project/Assets/Bar.cs:31: TODO: wire label
+C:/Work/Project/Assets/Foo.cs:10: TODO
+C:/Work/Project/Assets/Foo.cs:48: FIXME
+C:/Work/Project/Assets/Bar.cs:31: TODO
 ```
+
 ```text
 $root=C:/Work/Project/Assets
 $root/Foo.cs (2)
-  10: TODO: split setup
-  48: FIXME: stale state
+  10: TODO
+  48: FIXME
 $root/Bar.cs (1)
-  31: TODO: wire label
+  31: TODO
 ```
-### 파일 목록
 
-긴 파일 목록은 전체 경로를 반복하지 않고 디렉터리 형태를 보존합니다.
+### 반복 텍스트
 
-```text
-C:/Work/Project/Assets/CookStation/Blender/A.cs
-C:/Work/Project/Assets/CookStation/Blender/B.cs
-C:/Work/Project/Assets/CookStation/Brewer/C.cs
-```
-```text
-$root=C:/Work/Project/Assets/CookStation
-$root/Blender/ (2)
-  A.cs
-  B.cs
-$root/Brewer/ (1)
-  C.cs
-```
-### 반복
-
-같은 줄, 연속 번호, 반복되는 긴 토큰은 제자리에서 접습니다.
+같은 줄 반복과 연속 번호는 제자리에서 접습니다.
 
 ```text
 loading
@@ -98,18 +85,36 @@ loading
 file_001.tmp
 file_002.tmp
 file_003.tmp
+```
+
+```text
+loading (x3)
+file_001..003.tmp (3 lines)
+```
+
+### 공통 prefix와 긴 토큰
+
+긴 공통 prefix와 반복되는 ID는 짧은 별칭으로 바뀝니다.
+
+```text
+Namespace.Project.Feature.Alpha
+Namespace.Project.Feature.Beta
 created 550e8400-e29b-41d4-a716-446655440000
 updated 550e8400-e29b-41d4-a716-446655440000
 ```
+
 ```text
+$prefix1=Namespace.Project.Feature.
 $t1=550e8400-e29b-41d4-a716-446655440000
-loading (x3)
-file_001..003.tmp (3 lines)
+$prefix1Alpha
+$prefix1Beta
 created $t1
 updated $t1
 ```
-출력이 너무 크면 앞부분, 중요한 줄, 끝부분만 남기고 생략량을 표시합니다.
 
+### 거대한 출력
+
+그래도 출력이 크면 앞부분, error 같은 중요 줄이나 `-focus` 키워드 줄, 끝부분만 남기고 생략량을 표시합니다.
 ## 업데이트
 
 ```sh

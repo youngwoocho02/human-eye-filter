@@ -53,43 +53,30 @@ some-command | hef
 ```
 ## どう縮むか
 
-### 検索結果
+`hef` は結果が実際に短くなる場合だけパターンフィルターを適用します。主なケースは次の通りです。
 
-長い `path:line:text` 出力はファイルごとにまとまります。
+### パスと検索出力
+
+検索結果はファイルごとにまとめ、ファイル一覧はディレクトリごとにまとめます。
 
 ```text
-C:/Work/Project/Assets/Foo.cs:10: TODO: split setup
-C:/Work/Project/Assets/Foo.cs:48: FIXME: stale state
-C:/Work/Project/Assets/Bar.cs:31: TODO: wire label
+C:/Work/Project/Assets/Foo.cs:10: TODO
+C:/Work/Project/Assets/Foo.cs:48: FIXME
+C:/Work/Project/Assets/Bar.cs:31: TODO
 ```
+
 ```text
 $root=C:/Work/Project/Assets
 $root/Foo.cs (2)
-  10: TODO: split setup
-  48: FIXME: stale state
+  10: TODO
+  48: FIXME
 $root/Bar.cs (1)
-  31: TODO: wire label
+  31: TODO
 ```
-### ファイル一覧
 
-大きなファイル一覧はフルパスを繰り返さず、ディレクトリ構造を残します。
+### 繰り返しテキスト
 
-```text
-C:/Work/Project/Assets/CookStation/Blender/A.cs
-C:/Work/Project/Assets/CookStation/Blender/B.cs
-C:/Work/Project/Assets/CookStation/Brewer/C.cs
-```
-```text
-$root=C:/Work/Project/Assets/CookStation
-$root/Blender/ (2)
-  A.cs
-  B.cs
-$root/Brewer/ (1)
-  C.cs
-```
-### 繰り返し
-
-同じ行、連番、繰り返される長いトークンをその場で畳みます。
+同じ行の繰り返しと連番はその場で畳みます。
 
 ```text
 loading
@@ -98,18 +85,36 @@ loading
 file_001.tmp
 file_002.tmp
 file_003.tmp
+```
+
+```text
+loading (x3)
+file_001..003.tmp (3 lines)
+```
+
+### 共通 prefix と長いトークン
+
+長い共通 prefix と重複する ID は短い別名になります。
+
+```text
+Namespace.Project.Feature.Alpha
+Namespace.Project.Feature.Beta
 created 550e8400-e29b-41d4-a716-446655440000
 updated 550e8400-e29b-41d4-a716-446655440000
 ```
+
 ```text
+$prefix1=Namespace.Project.Feature.
 $t1=550e8400-e29b-41d4-a716-446655440000
-loading (x3)
-file_001..003.tmp (3 lines)
+$prefix1Alpha
+$prefix1Beta
 created $t1
 updated $t1
 ```
-出力が大きすぎる場合は、先頭、重要行、末尾だけを残し、省略量を表示します。
 
+### 巨大な出力
+
+それでも出力が大きい場合は、先頭、error などの重要行や `-focus` キーワード行、末尾だけを残し、省略量を表示します。
 ## アップデート
 
 ```sh

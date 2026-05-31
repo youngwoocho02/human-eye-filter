@@ -53,43 +53,30 @@ some-command | hef
 ```
 ## What Changes
 
-### Search results
+`hef` applies pattern filters only when the result gets shorter. The main cases are:
 
-Long `path:line:text` output becomes one group per file.
+### Paths and search output
+
+Search matches are grouped by file, and file lists are grouped by directory.
 
 ```text
-C:/Work/Project/Assets/Foo.cs:10: TODO: split setup
-C:/Work/Project/Assets/Foo.cs:48: FIXME: stale state
-C:/Work/Project/Assets/Bar.cs:31: TODO: wire label
+C:/Work/Project/Assets/Foo.cs:10: TODO
+C:/Work/Project/Assets/Foo.cs:48: FIXME
+C:/Work/Project/Assets/Bar.cs:31: TODO
 ```
+
 ```text
 $root=C:/Work/Project/Assets
 $root/Foo.cs (2)
-  10: TODO: split setup
-  48: FIXME: stale state
+  10: TODO
+  48: FIXME
 $root/Bar.cs (1)
-  31: TODO: wire label
+  31: TODO
 ```
-### File lists
 
-Large file lists keep the directory shape instead of repeating the full prefix.
+### Repeated text
 
-```text
-C:/Work/Project/Assets/CookStation/Blender/A.cs
-C:/Work/Project/Assets/CookStation/Blender/B.cs
-C:/Work/Project/Assets/CookStation/Brewer/C.cs
-```
-```text
-$root=C:/Work/Project/Assets/CookStation
-$root/Blender/ (2)
-  A.cs
-  B.cs
-$root/Brewer/ (1)
-  C.cs
-```
-### Repetition
-
-Repeated lines, numeric runs, and long repeated tokens are folded in place.
+Repeated lines and sequential numbers are folded in place.
 
 ```text
 loading
@@ -98,18 +85,36 @@ loading
 file_001.tmp
 file_002.tmp
 file_003.tmp
+```
+
+```text
+loading (x3)
+file_001..003.tmp (3 lines)
+```
+
+### Shared prefixes and tokens
+
+Long common prefixes and repeated IDs become short aliases.
+
+```text
+Namespace.Project.Feature.Alpha
+Namespace.Project.Feature.Beta
 created 550e8400-e29b-41d4-a716-446655440000
 updated 550e8400-e29b-41d4-a716-446655440000
 ```
+
 ```text
+$prefix1=Namespace.Project.Feature.
 $t1=550e8400-e29b-41d4-a716-446655440000
-loading (x3)
-file_001..003.tmp (3 lines)
+$prefix1Alpha
+$prefix1Beta
 created $t1
 updated $t1
 ```
-For very large output, `hef` keeps the head, important lines, and tail, then reports how much was omitted.
 
+### Huge output
+
+If output is still too large, `hef` keeps the head, important lines such as errors or focused keywords, and the tail, then reports the omitted amount.
 ## Update
 
 ```sh
