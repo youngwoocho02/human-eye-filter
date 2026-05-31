@@ -26,6 +26,14 @@ curl -fsSL https://raw.githubusercontent.com/youngwoocho02/human-eye-filter/mast
 
 The installer downloads the latest GitHub Release binary and adds the install directory to `PATH`. After installing, run commands as `hef ...`.
 
+## In One Line
+
+English: `hef` filters command output before it reaches an AI, folding repeated paths, repeated lines, numeric ranges, long shared prefixes, repeated IDs, and oversized output while keeping it readable.
+
+한국어: `hef`는 명령 출력이 AI에 들어가기 전에 사람이 대충 훑고 넘길 반복 경로, 반복 줄, 연속 번호, 긴 공통 prefix, 반복 ID, 과도하게 큰 출력을 읽을 수 있는 형태로 접어 주는 필터입니다.
+
+日本語: `hef` はコマンド出力が AI に渡る前に、繰り返しのパス、同じ行、連番、長い共通 prefix、重複する ID、大きすぎる出力を読みやすい形に畳み込むフィルターです。
+
 ## What It Does
 
 AI models spend tokens on every character in command output. `hef` keeps the output readable, but folds the parts a person would mentally skip: repeated lines, repeated paths, numeric runs, long shared prefixes, repeated IDs, and huge tails.
