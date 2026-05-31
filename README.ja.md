@@ -30,9 +30,16 @@ curl -fsSL https://raw.githubusercontent.com/youngwoocho02/human-eye-filter/mast
 
 ## クイックスタート
 
+エージェントのフックを一度登録すれば完了です。その後、エージェントは通常どおりシェルコマンドを実行し、`hef` が自動で付きます。
+
+```sh
+hef setup --agent all
+```
+
+自分でフィルターしたい場合は、手動のパイプもそのまま使えます。
+
 ```sh
 some-command | hef
-rg -n --glob '*.cs' 'ContentAvailability' Assets | hef
 ```
 
 ## どう縮むか
@@ -109,11 +116,7 @@ hef update --check
 
 ## エージェント設定
 
-エージェントは通常どおりシェルコマンドを実行します。フックやプラグインはコマンドの後ろに `| hef` を付けるだけです。
-
-```sh
-hef setup --agent all
-```
+`hef setup` は対応エージェントのフックやプラグインファイルを書き込みます。
 
 対応エージェント:
 

@@ -30,9 +30,16 @@ curl -fsSL https://raw.githubusercontent.com/youngwoocho02/human-eye-filter/mast
 
 ## 빠른 사용
 
+에이전트 훅을 한 번 등록하면 끝입니다. 이후 에이전트는 평소처럼 셸 명령을 실행하고, `hef`가 자동으로 붙습니다.
+
+```sh
+hef setup --agent all
+```
+
+직접 필터링하고 싶을 때는 수동 파이프도 그대로 쓸 수 있습니다.
+
 ```sh
 some-command | hef
-rg -n --glob '*.cs' 'ContentAvailability' Assets | hef
 ```
 
 ## 어떻게 줄어드나
@@ -109,11 +116,7 @@ hef update --check
 
 ## 에이전트 설정
 
-에이전트는 평소처럼 셸 명령을 실행하면 됩니다. 훅이나 플러그인은 명령 뒤에 `| hef`만 붙입니다.
-
-```sh
-hef setup --agent all
-```
+`hef setup`은 지원 에이전트의 훅이나 플러그인 파일을 작성합니다.
 
 지원 에이전트:
 

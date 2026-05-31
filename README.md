@@ -30,9 +30,16 @@ curl -fsSL https://raw.githubusercontent.com/youngwoocho02/human-eye-filter/mast
 
 ## Quick Start
 
+Register the agent hook once. After that, agents keep running normal shell commands and `hef` is appended automatically.
+
+```sh
+hef setup --agent all
+```
+
+Manual piping still works when you want to filter a command yourself:
+
 ```sh
 some-command | hef
-rg -n --glob '*.cs' 'ContentAvailability' Assets | hef
 ```
 
 ## What Changes
@@ -109,11 +116,7 @@ hef update --check
 
 ## Agent Setup
 
-Agents should keep running normal shell commands. Their shell hook or plugin only appends `| hef`.
-
-```sh
-hef setup --agent all
-```
+`hef setup` writes the hook or plugin files for supported agents.
 
 Supported agents:
 
