@@ -1,24 +1,18 @@
 # Human Eye Filter
 
-Reads command output the way a human eye would, so an LLM doesn't burn context on redundant lines.
+Reads command output like a human eye: keeps high-signal lines, collapses repeated noise, groups paths, samples large JSON, and reports what was omitted before the output reaches an LLM.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ## Why
 
-Humans skim. Faced with a wall of repetitive, redundant output, a person's eye jumps to what matters and ignores the rest. An LLM can't — it reads every token, and redundant output silently burns its context and its budget. Human Eye Filter reads command output the way a human eye would: it keeps the high-signal lines, collapses duplicates, groups repeated paths, samples bulk JSON, and reports how much it dropped — before the output ever reaches the model. Short output passes through untouched, because small exact results still matter.
+LLMs read every token in command output. Repeated paths, duplicate errors, giant JSON arrays, and broad search dumps silently burn context. Human Eye Filter is a pipe filter: command output goes in through stdin, reduced output comes out through stdout.
 
-It is not a command rewriter and it is not a per-tool adapter. The command stays flexible; its output passes through one reducer that recognizes a small set of common shapes and shrinks them consistently.
+It is not a command runner and not a per-tool adapter. The command stays flexible; `hef` only reduces the output it receives.
 
 ## Install
 
-`go install`:
-
-```sh
-go install github.com/youngwoocho02/human-eye-filter/cmd/humaneye@latest
-```
-
-Windows (PowerShell):
+Windows PowerShell:
 
 ```powershell
 irm https://raw.githubusercontent.com/youngwoocho02/human-eye-filter/master/install.ps1 | iex
@@ -30,23 +24,39 @@ Linux / macOS:
 curl -fsSL https://raw.githubusercontent.com/youngwoocho02/human-eye-filter/master/install.sh | sh
 ```
 
-Build from source:
-
-```sh
-go build -o bin/humaneye ./cmd/humaneye
-```
+The installer downloads the latest GitHub Release binary and adds the install directory to `PATH`. After installing, run commands as `hef ...`.
 
 ## Quick Start
 
-Pipe any output into `humaneye`, or let it run the command for you:
+Pipe output into `hef`:
 
 ```sh
-rg -n --glob '*.cs' 'ContentAvailability' Assets | humaneye --mode grep
-humaneye --mode json --max-chars 8000 < result.json
-humaneye --mode unity < Editor.log
-humaneye run -- rg -n --glob '*.cs' 'Foo' Assets
-humaneye run-auto -- git status
+rg -n --glob '*.cs' 'ContentAvailability' Assets | hef --mode grep
+hef --mode json --max-chars 8000 < result.json
+hef --mode unity < Editor.log
 ```
+
+## Agent Setup
+
+Agents should keep running normal shell commands. Their shell hook or plugin only appends `| hef`.
+
+```sh
+hef setup --agent all
+```
+
+Supported agents:
+
+- `claude` writes a Claude Code `PreToolUse` hook script.
+- `codex` writes a Codex `PreToolUse` hook script.
+- `opencode` writes an OpenCode `tool.execute.before` plugin.
+
+Remove the generated setup:
+
+```sh
+hef setup --agent all --remove
+```
+
+Only shell-command tools are covered. Direct file-read, browser, image, and other non-shell tools are not piped through `hef`.
 
 ## Modes
 
@@ -64,72 +74,6 @@ humaneye run-auto -- git status
 
 Long repeated path prefixes are shortened automatically, and SCM output is split into sections so checkout-only noise and real content changes are easy to separate.
 
-## Subcommands
-
-### `run`
-
-Runs a command, reduces the combined stdout/stderr, and returns the child's exit code.
-
-```sh
-humaneye run -- rg -n --glob '*.cs' 'Foo' Assets
-```
-
-### `run-auto`
-
-Same as `run`, but short output passes through raw. It reduces only when the output crosses `--auto-min-lines` (40) or `--auto-min-chars` (4000). This is the form to use in hooks: small exact results stay intact, large dumps get reduced.
-
-Short output — passes through untouched:
-
-```sh
-$ humaneye run-auto -- git rev-parse --short HEAD
-a1b2c3d
-```
-
-Large output — reduced, with a report of how much was dropped:
-
-```sh
-$ humaneye run-auto -- rg -n --glob '*.cs' 'Foo' Assets
-$root=Assets/Accelix/Scripts
-$root/Demo/DemoScopeService.cs (3)
-  42: ...
-  88: ...
-... <reduced from 612 to 41 lines>
-```
-
-### `hook powershell`
-
-Prints PowerShell helper functions to stdout:
-
-```powershell
-humaneye hook powershell
-```
-
-The generated helpers:
-
-- `eye <command>` — threshold-based generic wrapper.
-- `eye-rg ...` — `rg` output with the grep reducer hint.
-- `eye-git ...` — Git output with the SCM reducer hint.
-- `eye-cm ...` — PlasticSCM output with the SCM reducer hint.
-- `eye-unity ...` — Unity CLI output with the Unity log reducer hint.
-
-### `hook claude` / `hook codex`
-
-The built-in `PreToolUse` hook handler. Reads the hook event JSON on stdin and prints the rewrite JSON on stdout, wrapping the Bash-tool command as `humaneye run-auto -- bash -c '<cmd>'` (using its own absolute path). Claude Code and OpenAI Codex share one schema, so the two subcommands behave identically. It fails open (emits nothing) on bad input, background commands, and already-wrapped commands, so it can never block the Bash tool. This is what a config registers as the hook command — no external script needed.
-
-### `hook install` / `hook uninstall`
-
-Registers (or removes) the hook in each agent's config, idempotently:
-
-```sh
-humaneye hook install --agent all      # claude + codex + opencode
-humaneye hook install --agent claude
-humaneye hook uninstall --agent all
-```
-
-- **claude** — adds a `PreToolUse` Bash hook calling `humaneye hook claude` to `~/.claude/settings.json`.
-- **codex** — appends a `[[hooks.PreToolUse]]` block calling `humaneye hook codex` to `~/.codex/config.toml`.
-- **opencode** — writes a `tool.execute.before` plugin and registers it in `~/.config/opencode/opencode.json`.
-
 ## Options
 
 | Flag                | Default   | Description                                                       |
@@ -138,28 +82,13 @@ humaneye hook uninstall --agent all
 | `-max-lines`        | `160`     | Maximum output lines.                                             |
 | `-max-chars`        | `12000`   | Maximum output characters.                                       |
 | `-max-input-bytes`  | `4194304` | Maximum raw input bytes read before reducing.                    |
-| `-auto-min-lines`   | `40`      | Minimum raw lines before `run-auto` reduces.                     |
-| `-auto-min-chars`   | `4000`    | Minimum raw characters before `run-auto` reduces.                |
 | `-tool`             | _(none)_  | Tool hint, e.g. `rg`, `grep`, `git`, `cm`, `unity-cli`, `unity-scanner`. |
 | `-focus`            | _(none)_  | Comma-separated keywords to keep before generic samples.         |
 | `-keep`             | `error`   | Priority to keep: `error`, `warning`, `path`, `all`.             |
 | `-raw-on-fail`      | `true`    | Print raw input if reduction fails.                              |
-| `-version`          | `false`   | Print version and exit (also `version` subcommand).              |
+| `-version`          | `false`   | Print version and exit.                                           |
 
-`-tool` is a hint, not a hard parser: it maps a tool to the nearest shape reducer, and unknown tools still work through `auto`. `-focus` keeps project terms (e.g. `DemoScope`, `Addressables`) that are not errors but still matter.
-
-## Agent Integration
-
-The intended use is a hook that wraps the agent's Bash-tool commands so their output is reduced before it reaches the model. Set it up in one command:
-
-```sh
-humaneye hook install --agent all
-```
-
-- **Claude Code** and **OpenAI Codex** use a `PreToolUse` hook (same hook JSON schema) that rewrites the Bash-tool command to `humaneye run-auto -- bash -c '<cmd>'`. The hook handler is built in (`humaneye hook claude` / `humaneye hook codex`).
-- **OpenCode** uses a plugin `tool.execute.before` hook to do the same.
-
-Because the wrapper uses `run-auto`, short output stays raw and only large output is reduced. Only the Bash tool is covered — the Read and Grep tools and the PowerShell tool are not wrapped, so their results are unaffected.
+When `hef` reports `output limit reached` or `input limit reached`, narrow the original command and rerun it with more specific paths, globs, filters, or counts.
 
 ## Development
 

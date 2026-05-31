@@ -20,11 +20,11 @@ esac
 INSTALL_DIR="$HOME/.local/bin"
 mkdir -p "$INSTALL_DIR"
 
-URL="https://github.com/${REPO}/releases/latest/download/humaneye-${OS}-${ARCH}"
+URL="https://github.com/${REPO}/releases/latest/download/hef-${OS}-${ARCH}"
 
-echo "Downloading humaneye for ${OS}/${ARCH}..."
-curl -fsSL "$URL" -o "$INSTALL_DIR/humaneye"
-chmod +x "$INSTALL_DIR/humaneye"
+echo "Downloading hef for ${OS}/${ARCH}..."
+curl -fsSL "$URL" -o "$INSTALL_DIR/hef"
+chmod +x "$INSTALL_DIR/hef"
 
 case ":$PATH:" in
   *":$INSTALL_DIR:"*) ;;
@@ -42,5 +42,5 @@ case ":$PATH:" in
     echo "Added $INSTALL_DIR to PATH (restart shell to apply)" ;;
 esac
 
-echo "Installed humaneye to $INSTALL_DIR/humaneye"
-"$INSTALL_DIR/humaneye" version
+echo "Installed hef to $INSTALL_DIR/hef"
+"$INSTALL_DIR/hef" version

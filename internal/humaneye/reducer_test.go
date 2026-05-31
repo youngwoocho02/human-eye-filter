@@ -30,7 +30,7 @@ func TestReduceSamplesJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, want := range []string{`"_humaneye_omitted_items":2`, `"message":"ok"`, "mode=json"} {
+	for _, want := range []string{`"_hef_omitted_items":2`, `"message":"ok"`, "mode=json"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("expected %q in output:\n%s", want, output)
 		}
@@ -257,6 +257,36 @@ func TestUnityReducerKeepsStackFramesAfterException(t *testing.T) {
 	for _, want := range []string{"System.Exception: boom", "at Foo.Bar()", "at Foo.Baz()"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("expected stack frame %q in output:\n%s", want, output)
+		}
+	}
+}
+
+func TestOutputLimitReportsOmittedLines(t *testing.T) {
+	options := DefaultOptions()
+	options.MaxLines = 2
+	output, err := Reduce("one\ntwo\nthree\nfour\n", options)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, want := range []string{"output limit reached", "omitted 2 more reduced lines", "Narrow the command"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected %q in output:\n%s", want, output)
+		}
+	}
+}
+
+func TestOutputLimitReportsOmittedChars(t *testing.T) {
+	options := DefaultOptions()
+	options.MaxChars = 5
+	output, err := Reduce("abcdefghi\n", options)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, want := range []string{"output limit reached", "omitted", "Narrow the command"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected %q in output:\n%s", want, output)
 		}
 	}
 }

@@ -376,7 +376,7 @@ func reduceJSONValue(value any, depth int) any {
 			result[key] = reduceJSONValue(typed[key], depth+1)
 		}
 		if len(keys) > 24 {
-			result["_humaneye_omitted_keys"] = len(keys) - 24
+			result["_hef_omitted_keys"] = len(keys) - 24
 		}
 		return result
 	case []any:
@@ -385,7 +385,7 @@ func reduceJSONValue(value any, depth int) any {
 			result = append(result, reduceJSONValue(item, depth+1))
 		}
 		if len(typed) > 8 {
-			result = append(result, map[string]any{"_humaneye_omitted_items": len(typed) - 8})
+			result = append(result, map[string]any{"_hef_omitted_items": len(typed) - 8})
 		}
 		return result
 	case string:
@@ -521,7 +521,7 @@ func enforceLimits(input string, options Options) string {
 		maxLines = DefaultOptions().MaxLines
 	}
 	if len(lines) > maxLines {
-		lines = append(lines[:maxLines], fmt.Sprintf("... <humaneye truncated %d lines>", len(lines)-maxLines))
+		lines = append(lines[:maxLines], fmt.Sprintf("... <hef output limit reached: omitted %d more reduced lines. Narrow the command and rerun; use more specific paths, globs, filters, or counts.>", len(lines)-maxLines))
 	}
 
 	output := strings.Join(lines, "\n")
@@ -531,7 +531,7 @@ func enforceLimits(input string, options Options) string {
 	}
 	if runeLen(output) > maxChars {
 		omitted := runeLen(output) - maxChars
-		output = truncateRunes(output, maxChars) + fmt.Sprintf("\n... <humaneye truncated %d chars>", omitted)
+		output = truncateRunes(output, maxChars) + fmt.Sprintf("\n... <hef output limit reached: omitted %d more reduced chars. Narrow the command and rerun; use more specific paths, globs, filters, or counts.>", omitted)
 	}
 
 	return output
@@ -554,7 +554,7 @@ func formatSummary(s stats) string {
 	if sections == "" {
 		sections = "none"
 	}
-	return fmt.Sprintf("\n\n--- humaneye summary ---\nmode=%s lines=%d->%d chars=%d->%d kept=%s\n",
+	return fmt.Sprintf("\n\n--- hef summary ---\nmode=%s lines=%d->%d chars=%d->%d kept=%s\n",
 		s.Mode,
 		s.InputLines,
 		s.OutputLines,
