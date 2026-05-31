@@ -1,14 +1,18 @@
 # Human Eye Filter
 
-Reads command output like a human eye before it reaches an AI: collapses repeated lines, numeric ranges, common prefixes, repeated long tokens, and oversized output.
+[English](README.md) | [Korean](README.ko.md) | [Japanese](README.ja.md)
+
+> A pipe filter that shrinks command output before it reaches an AI.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+**No mode selection. No tool adapter. Just pipe output into `hef`.**
+
 ## Why
 
-People can scan thousands of characters and jump to the useful lines. AI models receive that same output as tokens, including every repeated path, duplicate error, giant JSON array, and broad search dump. Human Eye Filter reduces that waste before the output reaches the model.
+People can scan thousands of characters and jump to the useful lines. AI models receive every repeated path, duplicate line, long ID, and oversized dump as tokens. `hef` folds that waste while keeping the output readable.
 
-It is not a command runner and not a per-tool adapter. The command stays flexible; `hef` only filters the output it receives.
+It is not a command runner. The original command stays unchanged; `hef` only filters stdin and writes reduced output to stdout.
 
 ## Install
 
@@ -24,25 +28,14 @@ Linux / macOS:
 curl -fsSL https://raw.githubusercontent.com/youngwoocho02/human-eye-filter/master/install.sh | sh
 ```
 
-The installer downloads the latest GitHub Release binary and adds the install directory to `PATH`. After installing, run commands as `hef ...`.
-
-## In One Line
-
-English: `hef` filters command output before it reaches an AI, folding repeated paths, repeated lines, numeric ranges, long shared prefixes, repeated IDs, and oversized output while keeping it readable.
-
-한국어: `hef`는 명령 출력이 AI에 들어가기 전에 사람이 대충 훑고 넘길 반복 경로, 반복 줄, 연속 번호, 긴 공통 prefix, 반복 ID, 과도하게 큰 출력을 읽을 수 있는 형태로 접어 주는 필터입니다.
-
-日本語: `hef` はコマンド出力が AI に渡る前に、繰り返しのパス、同じ行、連番、長い共通 prefix、重複する ID、大きすぎる出力を読みやすい形に畳み込むフィルターです。
-
-## What It Does
-
-AI models spend tokens on every character in command output. `hef` keeps the output readable, but folds the parts a person would mentally skip: repeated lines, repeated paths, numeric runs, long shared prefixes, repeated IDs, and huge tails.
-
-Use it by adding one pipe:
+## Quick Start
 
 ```sh
 some-command | hef
+rg -n --glob '*.cs' 'ContentAvailability' Assets | hef
 ```
+
+## What Changes
 
 ### Search results
 
@@ -106,22 +99,12 @@ updated $t1
 ```
 
 For very large output, `hef` keeps the head, important lines, and tail, then reports how much was omitted.
+
 ## Update
 
 ```sh
 hef update
 hef update --check
-```
-
-`hef` checks for a newer GitHub Release at most once per hour and prints a short notice when an update is available. Update checks are cached under the user profile and ignored silently when offline.
-
-## Quick Start
-
-Pipe output into `hef`:
-
-```sh
-some-command | hef
-rg -n --glob '*.cs' 'ContentAvailability' Assets | hef
 ```
 
 ## Agent Setup
@@ -138,12 +121,6 @@ Supported agents:
 - `codex` writes a Codex `PreToolUse` hook script.
 - `opencode` writes an OpenCode `tool.execute.before` plugin.
 
-Generated files:
-
-- Claude Code: `~/.claude/hooks/hef-pipe.ps1`, registered in `~/.claude/settings.json`
-- OpenAI Codex: `~/.codex/hooks/hef-pipe.ps1`, registered in `~/.codex/config.toml`
-- OpenCode: `~/.config/opencode/plugins/hef.ts`, registered in `~/.config/opencode/opencode.json`
-
 Remove the generated setup:
 
 ```sh
@@ -154,18 +131,16 @@ Only shell-command tools are covered. Direct file-read, browser, image, and othe
 
 ## Options
 
-| Flag                | Default   | Description                                                       |
-| ------------------- | --------- | ----------------------------------------------------------------- |
-| `-max-lines`        | `160`     | Maximum output lines.                                             |
-| `-max-chars`        | `12000`   | Maximum output characters.                                       |
-| `-max-input-bytes`  | `4194304` | Maximum raw input bytes read before reducing.                    |
-| `-focus`            | _(none)_  | Comma-separated keywords to keep before generic samples.         |
-| `-raw-on-fail`      | `true`    | Print raw input if reduction fails.                              |
-| `-version`          | `false`   | Print version and exit.                                           |
+| Flag                | Default   | Description                                    |
+| ------------------- | --------- | ---------------------------------------------- |
+| `-max-lines`        | `160`     | Maximum output lines.                          |
+| `-max-chars`        | `12000`   | Maximum output characters.                     |
+| `-max-input-bytes`  | `4194304` | Maximum raw input bytes read before reducing.  |
+| `-focus`            | _(none)_  | Keywords to keep before generic samples.       |
+| `-raw-on-fail`      | `true`    | Print raw input if reduction fails.            |
+| `-version`          | `false`   | Print version and exit.                        |
 
-Most runs should not need flags. Use them only when the automatic output is too broad, too short, or missing a keyword you care about.
-
-When `hef` reports `output limit reached` or `input limit reached`, narrow the original command and rerun it with more specific paths, globs, filters, or counts.
+Most runs should not need flags.
 
 ## Development
 
