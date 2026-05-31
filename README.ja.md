@@ -14,6 +14,19 @@
 
 `hef` はコマンドランナーではありません。元のコマンドはそのままで、stdin の出力だけを減らして stdout に出します。
 
+## RTK との違い
+
+RTK は command proxy です。エージェントのフックが `git status` のようなコマンドを `rtk git status` に書き換え、RTK がそのコマンドをコマンド別フィルターへ送ります。
+
+`hef` は単純な出力フィルターです。コマンドを置き換えず、ツール別 command wrapper も不要で、ユーザーが mode を選ぶ必要もありません。元のコマンドはそのまま実行され、`hef` は stdout の繰り返しパターンだけを畳みます。
+
+```sh
+# RTK style
+agent command -> hook rewrite -> rtk <command> -> command-specific filter
+
+# HEF style
+agent command -> original command runs -> stdout | hef -> pattern filters
+```
 ## インストール
 
 Windows PowerShell:
@@ -21,13 +34,11 @@ Windows PowerShell:
 ```powershell
 irm https://raw.githubusercontent.com/youngwoocho02/human-eye-filter/master/install.ps1 | iex
 ```
-
 Linux / macOS:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/youngwoocho02/human-eye-filter/master/install.sh | sh
 ```
-
 ## クイックスタート
 
 エージェントのフックを一度登録すれば完了です。その後、エージェントは通常どおりシェルコマンドを実行し、`hef` が自動で付きます。
@@ -35,13 +46,11 @@ curl -fsSL https://raw.githubusercontent.com/youngwoocho02/human-eye-filter/mast
 ```sh
 hef setup --agent all
 ```
-
 自分でフィルターしたい場合は、手動のパイプもそのまま使えます。
 
 ```sh
 some-command | hef
 ```
-
 ## どう縮むか
 
 ### 検索結果
@@ -53,7 +62,6 @@ C:/Work/Project/Assets/Foo.cs:10: TODO: split setup
 C:/Work/Project/Assets/Foo.cs:48: FIXME: stale state
 C:/Work/Project/Assets/Bar.cs:31: TODO: wire label
 ```
-
 ```text
 $root=C:/Work/Project/Assets
 $root/Foo.cs (2)
@@ -62,7 +70,6 @@ $root/Foo.cs (2)
 $root/Bar.cs (1)
   31: TODO: wire label
 ```
-
 ### ファイル一覧
 
 大きなファイル一覧はフルパスを繰り返さず、ディレクトリ構造を残します。
@@ -72,7 +79,6 @@ C:/Work/Project/Assets/CookStation/Blender/A.cs
 C:/Work/Project/Assets/CookStation/Blender/B.cs
 C:/Work/Project/Assets/CookStation/Brewer/C.cs
 ```
-
 ```text
 $root=C:/Work/Project/Assets/CookStation
 $root/Blender/ (2)
@@ -81,7 +87,6 @@ $root/Blender/ (2)
 $root/Brewer/ (1)
   C.cs
 ```
-
 ### 繰り返し
 
 同じ行、連番、繰り返される長いトークンをその場で畳みます。
@@ -96,7 +101,6 @@ file_003.tmp
 created 550e8400-e29b-41d4-a716-446655440000
 updated 550e8400-e29b-41d4-a716-446655440000
 ```
-
 ```text
 $t1=550e8400-e29b-41d4-a716-446655440000
 loading (x3)
@@ -104,22 +108,7 @@ file_001..003.tmp (3 lines)
 created $t1
 updated $t1
 ```
-
 出力が大きすぎる場合は、先頭、重要行、末尾だけを残し、省略量を表示します。
-
-## RTK との違い
-
-RTK は command proxy です。エージェントのフックが `git status` のようなコマンドを `rtk git status` に書き換え、RTK がそのコマンドをコマンド別フィルターへ送ります。
-
-`hef` は単純な出力フィルターです。コマンドを置き換えず、ツール別 command wrapper も不要で、ユーザーが mode を選ぶ必要もありません。元のコマンドはそのまま実行され、`hef` は stdout の繰り返しパターンだけを畳みます。
-
-```sh
-# RTK style
-agent command -> hook rewrite -> rtk <command> -> command-specific filter
-
-# HEF style
-agent command -> original command runs -> stdout | hef -> pattern filters
-```
 
 ## アップデート
 
@@ -127,7 +116,6 @@ agent command -> original command runs -> stdout | hef -> pattern filters
 hef update
 hef update --check
 ```
-
 ## エージェント設定
 
 `hef setup` は対応エージェントのフックやプラグインファイルを書き込みます。
@@ -143,7 +131,6 @@ hef update --check
 ```sh
 hef setup --agent all --remove
 ```
-
 対象はシェルコマンドツールだけです。直接のファイル読み取り、ブラウザ、画像、その他の非シェルツールの出力は `hef` を通りません。
 
 ## オプション
@@ -166,7 +153,6 @@ gofmt -w .
 go test ./...
 go build ./...
 ```
-
 ## ライセンス
 
 MIT。詳細は [LICENSE](LICENSE) を参照してください。

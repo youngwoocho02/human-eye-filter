@@ -14,6 +14,19 @@ People can scan thousands of characters and jump to the useful lines. AI models 
 
 It is not a command runner. The original command stays unchanged; `hef` only filters stdin and writes reduced output to stdout.
 
+## Compared to RTK
+
+RTK is a command proxy. Its agent hooks rewrite commands such as `git status` into `rtk git status`, then RTK routes that command through command-specific filters.
+
+`hef` is a plain output filter. It does not replace the command, does not need per-tool command wrappers, and does not ask the user to pick a mode. The original command runs normally; `hef` only folds repeated patterns in stdout.
+
+```sh
+# RTK-style flow
+agent command -> hook rewrite -> rtk <command> -> command-specific filter
+
+# HEF-style flow
+agent command -> original command runs -> stdout | hef -> pattern filters
+```
 ## Install
 
 Windows PowerShell:
@@ -21,13 +34,11 @@ Windows PowerShell:
 ```powershell
 irm https://raw.githubusercontent.com/youngwoocho02/human-eye-filter/master/install.ps1 | iex
 ```
-
 Linux / macOS:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/youngwoocho02/human-eye-filter/master/install.sh | sh
 ```
-
 ## Quick Start
 
 Register the agent hook once. After that, agents keep running normal shell commands and `hef` is appended automatically.
@@ -35,13 +46,11 @@ Register the agent hook once. After that, agents keep running normal shell comma
 ```sh
 hef setup --agent all
 ```
-
 Manual piping still works when you want to filter a command yourself:
 
 ```sh
 some-command | hef
 ```
-
 ## What Changes
 
 ### Search results
@@ -53,7 +62,6 @@ C:/Work/Project/Assets/Foo.cs:10: TODO: split setup
 C:/Work/Project/Assets/Foo.cs:48: FIXME: stale state
 C:/Work/Project/Assets/Bar.cs:31: TODO: wire label
 ```
-
 ```text
 $root=C:/Work/Project/Assets
 $root/Foo.cs (2)
@@ -62,7 +70,6 @@ $root/Foo.cs (2)
 $root/Bar.cs (1)
   31: TODO: wire label
 ```
-
 ### File lists
 
 Large file lists keep the directory shape instead of repeating the full prefix.
@@ -72,7 +79,6 @@ C:/Work/Project/Assets/CookStation/Blender/A.cs
 C:/Work/Project/Assets/CookStation/Blender/B.cs
 C:/Work/Project/Assets/CookStation/Brewer/C.cs
 ```
-
 ```text
 $root=C:/Work/Project/Assets/CookStation
 $root/Blender/ (2)
@@ -81,7 +87,6 @@ $root/Blender/ (2)
 $root/Brewer/ (1)
   C.cs
 ```
-
 ### Repetition
 
 Repeated lines, numeric runs, and long repeated tokens are folded in place.
@@ -96,7 +101,6 @@ file_003.tmp
 created 550e8400-e29b-41d4-a716-446655440000
 updated 550e8400-e29b-41d4-a716-446655440000
 ```
-
 ```text
 $t1=550e8400-e29b-41d4-a716-446655440000
 loading (x3)
@@ -104,22 +108,7 @@ file_001..003.tmp (3 lines)
 created $t1
 updated $t1
 ```
-
 For very large output, `hef` keeps the head, important lines, and tail, then reports how much was omitted.
-
-## Compared to RTK
-
-RTK is a command proxy. Its agent hooks rewrite commands such as `git status` into `rtk git status`, then RTK routes that command through command-specific filters.
-
-`hef` is a plain output filter. It does not replace the command, does not need per-tool command wrappers, and does not ask the user to pick a mode. The original command runs normally; `hef` only folds repeated patterns in stdout.
-
-```sh
-# RTK-style flow
-agent command -> hook rewrite -> rtk <command> -> command-specific filter
-
-# HEF-style flow
-agent command -> original command runs -> stdout | hef -> pattern filters
-```
 
 ## Update
 
@@ -127,7 +116,6 @@ agent command -> original command runs -> stdout | hef -> pattern filters
 hef update
 hef update --check
 ```
-
 ## Agent Setup
 
 `hef setup` writes the hook or plugin files for supported agents.
@@ -143,7 +131,6 @@ Remove the generated setup:
 ```sh
 hef setup --agent all --remove
 ```
-
 Only shell-command tools are covered. Direct file-read, browser, image, and other non-shell tools are not piped through `hef`.
 
 ## Options
@@ -166,7 +153,6 @@ gofmt -w .
 go test ./...
 go build ./...
 ```
-
 ## License
 
 MIT. See [LICENSE](LICENSE).
