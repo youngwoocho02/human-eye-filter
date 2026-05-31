@@ -18,12 +18,18 @@ func main() {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 	}
+	if code == 0 {
+		printUpdateNotice()
+	}
 	os.Exit(code)
 }
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error) {
 	if len(args) > 0 && args[0] == "setup" {
 		return runSetup(args[1:], stdout, stderr)
+	}
+	if len(args) > 0 && args[0] == "update" {
+		return runUpdate(args[1:], stdout, stderr)
 	}
 
 	flags := flag.NewFlagSet("hef", flag.ContinueOnError)

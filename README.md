@@ -26,6 +26,15 @@ curl -fsSL https://raw.githubusercontent.com/youngwoocho02/human-eye-filter/mast
 
 The installer downloads the latest GitHub Release binary and adds the install directory to `PATH`. After installing, run commands as `hef ...`.
 
+## Update
+
+```sh
+hef update
+hef update --check
+```
+
+`hef` checks for a newer GitHub Release at most once per hour and prints a short notice when an update is available. Update checks are cached under the user profile and ignored silently when offline.
+
 ## Quick Start
 
 Pipe output into `hef`:
