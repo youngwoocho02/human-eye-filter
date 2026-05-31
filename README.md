@@ -50,6 +50,12 @@ Supported agents:
 - `codex` writes a Codex `PreToolUse` hook script.
 - `opencode` writes an OpenCode `tool.execute.before` plugin.
 
+Generated files:
+
+- Claude Code: `~/.claude/hooks/hef-pipe.ps1`, registered in `~/.claude/settings.json`
+- OpenAI Codex: `~/.codex/hooks/hef-pipe.ps1`, registered in `~/.codex/config.toml`
+- OpenCode: `~/.config/opencode/plugins/hef.ts`, registered in `~/.config/opencode/opencode.json`
+
 Remove the generated setup:
 
 ```sh
