@@ -8,28 +8,18 @@ debugging or decision making.
 
 ## Strategy
 
-Do not build hundreds of bespoke parsers first. Most tool output falls into a
-small set of shapes:
+Do not build reducers around tools. The pipeline looks only at repeated patterns
+in the output text and applies a filter only when the result is shorter.
 
-- `path:line:text` search matches
-- path lists
-- JSON objects and arrays
-- status tables
-- build, compiler, test, and runtime logs
-- diff-like or SCM summaries
-- stack traces
+Current minimal filters:
 
-The first reducer layer handles these shapes. Tool-specific support is a hint
-that selects a reducer and tweaks priorities.
+- `RepeatedLine`: collapse consecutive identical lines.
+- `SequentialRange`: collapse consecutive numeric runs such as `001..020`.
+- `CommonPrefix`: alias long prefixes shared by many lines.
+- `DictionaryToken`: alias repeated long paths, URLs, IDs, and GUIDs.
+- `BoundedSample`: keep head, important lines, and tail when output is still too large.
 
-Examples:
-
-- `rg`, `grep`, `ag`, `ack`: grep reducer
-- `find`, `fd`: path reducer
-- `git`, `gh`, `cm`, `svn`, `hg`, `jj`: SCM reducer
-- `unity-cli`, `unity-scanner`, `dotnet`, `go`, `npm`, `cargo`: log reducer
-- `curl`, `jq`, `gh api`: JSON reducer when the payload is JSON
-
+Add new filters only when they describe an output pattern, not a command or tool.
 ## Future local agent layer
 
 A local agent can be added later, but it should sit behind the reducer. The

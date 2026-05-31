@@ -1,7 +1,6 @@
 package humaneye
 
 import (
-	"encoding/json"
 	"fmt"
 	"regexp"
 	"sort"
@@ -10,701 +9,530 @@ import (
 )
 
 var ansiEscapePattern = regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]`)
-var grepLinePattern = regexp.MustCompile(`^(.+?):(\d+)(?::(\d+))?:\s?(.*)$`)
-var pathLikePattern = regexp.MustCompile(`(?i)(^|[A-Za-z]:[\\/]|[./\\])[\w .@~+\-()[\]{}:]+[\\/][\w .@~+\-()[\]{}:]+\.[A-Za-z0-9_]+$`)
-var scmStatusLinePattern = regexp.MustCompile(`(?i)^\s*(?:\?\?|[MADRCU?!]|CH|CO|CO\+CH|LD|LM|MV|AD|PR|DE|RP)\b`)
+var numberPattern = regexp.MustCompile(`\d+`)
+var pathLinePattern = regexp.MustCompile(`^(.+?):(\d+)(?::(\d+))?:(.*)$`)
+var longTokenPattern = regexp.MustCompile(`(?i)(?:[A-Za-z]:[\\/]|https?://|[./\\])[^\s\]})>,;'"]{24,}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`)
 
-type grepMatch struct {
-	location string
-	text     string
+type filterStep struct {
+	name string
+	fn   func(string, Options) (string, bool)
 }
 
-type stats struct {
-	InputLines   int
-	OutputLines  int
-	InputChars   int
-	OutputChars  int
-	Mode         string
-	SectionsKept []string
+type matchLine struct {
+	line string
+	text string
+}
+
+type numericPart struct {
+	prefix string
+	suffix string
+	raw    string
+	value  int
+	width  int
+}
+
+type rangeRun struct {
+	start numericPart
+	end   numericPart
+	count int
 }
 
 func Reduce(input string, options Options) (string, error) {
-	input = strings.TrimPrefix(input, "\ufeff")
 	input = normalizeInput(input)
 	if strings.TrimSpace(input) == "" {
 		return "", nil
 	}
 
-	mode := normalizeMode(options.Mode)
-	if mode == "auto" {
-		detected := detectMode(input)
-		if detected == "json" {
-			mode = detected
-		} else {
-			mode = modeFromTool(options.Tool)
-		}
-		if mode == "auto" {
-			mode = detectMode(input)
-		}
-	}
-
-	var body string
-	var sections []string
-	switch mode {
-	case "json":
-		body, sections = reduceJSON(input, options)
-	case "grep":
-		body, sections = reduceGrep(input, options)
-	case "paths":
-		body, sections = reducePaths(input, options)
-	case "unity":
-		body, sections = reduceKeywordText(input, options, unityKeywords())
-	case "scm":
-		body, sections = reduceSCM(input, options)
-	default:
-		body, sections = reduceText(input, options)
-	}
-
-	body = enforceLimits(body, options)
-	s := stats{
-		InputLines:   countLines(input),
-		OutputLines:  countLines(body),
-		InputChars:   len(input),
-		OutputChars:  len(body),
-		Mode:         mode,
-		SectionsKept: sections,
-	}
-
-	return body + formatSummary(s), nil
-}
-
-func modeFromTool(tool string) string {
-	normalized := strings.ToLower(strings.TrimSpace(tool))
-	normalized = strings.TrimSuffix(normalized, ".exe")
-	switch normalized {
-	case "", "auto":
-		return "auto"
-	case "rg", "ripgrep", "grep", "ag", "ack", "pt":
-		return "grep"
-	case "find", "fd":
-		return "paths"
-	case "git", "cm", "svn", "hg", "jj", "plastic":
-		return "scm"
-	case "unity", "unity-cli", "unity-scanner", "dotnet", "msbuild", "npm", "pnpm", "yarn", "go", "cargo", "rustc", "javac", "mvn", "gradle":
-		return "unity"
-	case "jq", "curl", "gh", "gh-api":
-		return "json"
-	default:
-		return "auto"
-	}
-}
-
-func normalizeMode(mode string) string {
-	switch strings.ToLower(strings.TrimSpace(mode)) {
-	case "json", "paths", "grep", "unity", "scm", "text", "auto":
-		return strings.ToLower(strings.TrimSpace(mode))
-	default:
-		return "auto"
-	}
-}
-
-func detectMode(input string) string {
-	trimmed := strings.TrimSpace(input)
-	if strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[") {
-		var value any
-		if json.Unmarshal([]byte(trimmed), &value) == nil {
-			return "json"
-		}
-	}
-
-	lines := nonEmptyLines(input)
-	if len(lines) == 0 {
-		return "text"
-	}
-
-	grepHits := 0
-	pathHits := 0
-	unityHits := 0
-	scmHits := 0
-	for _, line := range sample(lines, 80) {
-		if grepLinePattern.MatchString(line) {
-			grepHits++
-		}
-		if pathLikePattern.MatchString(strings.TrimSpace(line)) {
-			pathHits++
-		}
-		lower := strings.ToLower(line)
-		if strings.Contains(lower, "unity") || strings.Contains(lower, "exception") || strings.Contains(lower, "stacktrace") || strings.Contains(lower, "shader") {
-			unityHits++
-		}
-		if strings.Contains(lower, "changeset") || strings.Contains(lower, "modified items") || strings.Contains(lower, "branch=") || strings.Contains(lower, "git status") || strings.Contains(lower, "changed") {
-			scmHits++
-		}
-	}
-
-	if grepHits >= 3 || grepHits*2 >= len(lines) {
-		return "grep"
-	}
-	if pathHits >= 5 && pathHits*2 >= len(lines) {
-		return "paths"
-	}
-	if unityHits >= 3 {
-		return "unity"
-	}
-	if scmHits >= 2 {
-		return "scm"
-	}
-	return "text"
-}
-
-func reduceText(input string, options Options) (string, []string) {
-	lines := nonEmptyLines(input)
-	lines = collapseDuplicateLines(lines)
-	return strings.Join(prioritizeLines(lines, options), "\n"), []string{"deduped text"}
-}
-
-func reduceKeywordText(input string, options Options, keywords []string) (string, []string) {
-	lines := nonEmptyLines(input)
-	lines = collapseDuplicateLines(lines)
-	priority, rest := splitPriorityLinesWithContext(lines, append(focusKeywords(options), keywords...))
-
-	limit := options.MaxLines
-	if limit <= 0 {
-		limit = DefaultOptions().MaxLines
-	}
-
-	out := make([]string, 0, limit)
-	if len(priority) > 0 {
-		out = append(out, "## priority")
-		out = append(out, take(priority, limit/2)...)
-	}
-
-	remaining := limit - len(out)
-	if remaining > 1 && len(rest) > 0 {
-		if len(out) > 0 {
-			out = append(out, "## sample")
-			remaining--
-		}
-		out = append(out, take(rest, remaining)...)
-	}
-
-	return strings.Join(out, "\n"), []string{"priority lines", "deduped sample"}
-}
-
-func reduceGrep(input string, options Options) (string, []string) {
-	lines := nonEmptyLines(input)
-	grouped := map[string][]grepMatch{}
-	other := []string{}
-	for _, line := range lines {
-		matches := grepLinePattern.FindStringSubmatch(line)
-		if len(matches) == 0 {
-			other = append(other, line)
+	current := input
+	applied := []string{}
+	for _, step := range []filterStep{
+		{name: "RepeatedLine", fn: repeatedLineFilter},
+		{name: "PathLineGroup", fn: pathLineGroupFilter},
+		{name: "DirectoryGroup", fn: directoryGroupFilter},
+		{name: "SequentialRange", fn: sequentialRangeFilter},
+		{name: "CommonPrefix", fn: commonPrefixFilter},
+		{name: "DictionaryToken", fn: dictionaryTokenFilter},
+	} {
+		next, ok := step.fn(current, options)
+		if !ok || !shorter(current, next) {
 			continue
 		}
-		location := matches[2]
-		if matches[3] != "" {
-			location += ":" + matches[3]
-		}
-		grouped[matches[1]] = append(grouped[matches[1]], grepMatch{location: location, text: matches[4]})
+		current = next
+		applied = append(applied, step.name)
 	}
 
-	paths := make([]string, 0, len(grouped))
-	for path := range grouped {
-		paths = append(paths, path)
+	if next, ok := boundedSampleFilter(current, options); ok {
+		current = next
+		applied = append(applied, "BoundedSample")
 	}
-	sort.Strings(paths)
-	root := commonPathPrefix(paths)
-
-	out := []string{}
-	if root != "" {
-		out = append(out, "$root="+root)
-	}
-	perFile := 4
-	for _, path := range paths {
-		items := grouped[path]
-		out = append(out, fmt.Sprintf("%s (%d)", displayPath(path, root), len(items)))
-		for _, item := range takeMatches(items, perFile) {
-			out = append(out, fmt.Sprintf("  %s: %s", item.location, item.text))
-		}
-		if len(items) > perFile {
-			out = append(out, fmt.Sprintf("  ... %d more", len(items)-perFile))
-		}
+	if len(applied) == 0 {
+		applied = append(applied, "None")
 	}
 
-	if len(other) > 0 {
-		out = append(out, "## unmatched")
-		out = append(out, take(collapseDuplicateLines(other), 20)...)
-	}
-
-	return strings.Join(out, "\n"), []string{"grouped grep matches"}
-}
-
-func reducePaths(input string, options Options) (string, []string) {
-	lines := collapseDuplicateLines(nonEmptyLines(input))
-	tree := map[string][]string{}
-	originalDirs := []string{}
-	for _, line := range lines {
-		normalized := strings.ReplaceAll(strings.TrimSpace(line), "\\", "/")
-		if !pathLikePattern.MatchString(normalized) {
-			continue
-		}
-		dir, file := splitPath(normalized)
-		tree[dir] = append(tree[dir], file)
-		originalDirs = append(originalDirs, dir)
-	}
-
-	dirs := make([]string, 0, len(tree))
-	for dir := range tree {
-		dirs = append(dirs, dir)
-	}
-	sort.Strings(dirs)
-	root := commonPathPrefix(originalDirs)
-
-	out := []string{}
-	if root != "" {
-		out = append(out, "$root="+root)
-	}
-	for _, dir := range dirs {
-		files := tree[dir]
-		sort.Strings(files)
-		out = append(out, fmt.Sprintf("%s/ (%d)", displayPath(dir, root), len(files)))
-		for _, file := range take(files, 8) {
-			out = append(out, "  "+file)
-		}
-		if len(files) > 8 {
-			out = append(out, fmt.Sprintf("  ... %d more", len(files)-8))
-		}
-	}
-
-	return strings.Join(out, "\n"), []string{"grouped paths"}
-}
-
-func reduceSCM(input string, options Options) (string, []string) {
-	lines := collapseDuplicateLines(nonEmptyLines(input))
-	focus := focusKeywords(options)
-	sections := map[string][]string{
-		"conflicts":      {},
-		"content change": {},
-		"checkout only":  {},
-		"added":          {},
-		"deleted/moved":  {},
-		"branch/change":  {},
-		"focused":        {},
-		"other":          {},
-	}
-	order := []string{"conflicts", "content change", "checkout only", "added", "deleted/moved", "branch/change", "focused", "other"}
-
-	for _, line := range lines {
-		lower := strings.ToLower(line)
-		switch {
-		case strings.Contains(lower, "conflict") || strings.Contains(lower, "merge needed"):
-			sections["conflicts"] = append(sections["conflicts"], line)
-		case strings.HasPrefix(strings.TrimSpace(line), "CO+CH") || strings.HasPrefix(strings.TrimSpace(line), "CH"):
-			sections["content change"] = append(sections["content change"], line)
-		case strings.HasPrefix(strings.TrimSpace(line), "CO "):
-			sections["checkout only"] = append(sections["checkout only"], line)
-		case strings.HasPrefix(strings.TrimSpace(line), "AD") || strings.HasPrefix(strings.TrimSpace(line), "??") || strings.HasPrefix(strings.TrimSpace(line), "A "):
-			sections["added"] = append(sections["added"], line)
-		case strings.HasPrefix(strings.TrimSpace(line), "DE") || strings.HasPrefix(strings.TrimSpace(line), "LD") || strings.HasPrefix(strings.TrimSpace(line), "MV") || strings.HasPrefix(strings.TrimSpace(line), "D "):
-			sections["deleted/moved"] = append(sections["deleted/moved"], line)
-		case strings.Contains(lower, "branch") || strings.Contains(lower, "changeset") || strings.Contains(lower, "changelist"):
-			sections["branch/change"] = append(sections["branch/change"], line)
-		case isSCMStatusLine(line):
-			sections["content change"] = append(sections["content change"], line)
-		case containsAny(lower, focus):
-			sections["focused"] = append(sections["focused"], line)
-		default:
-			sections["other"] = append(sections["other"], line)
-		}
-	}
-
-	limit := options.MaxLines
-	if limit <= 0 {
-		limit = DefaultOptions().MaxLines
-	}
-	out := []string{}
-	for _, name := range order {
-		items := sections[name]
-		if len(items) == 0 || len(out) >= limit {
-			continue
-		}
-		remaining := limit - len(out)
-		if remaining <= 1 {
-			break
-		}
-		out = append(out, "## "+name)
-		remaining--
-		taken := take(items, remaining)
-		out = append(out, taken...)
-		if len(items) > len(taken) && len(out) < limit {
-			out = append(out, fmt.Sprintf("... %d more %s lines", len(items)-len(taken), name))
-		}
-	}
-
-	return strings.Join(out, "\n"), []string{"scm sections", "checkout/change split"}
-}
-
-func reduceJSON(input string, options Options) (string, []string) {
-	var value any
-	if err := json.Unmarshal([]byte(strings.TrimSpace(input)), &value); err != nil {
-		return reduceText(input, options)
-	}
-
-	reduced := reduceJSONValue(value, 0)
-	encoded, err := json.Marshal(reduced)
-	if err != nil {
-		return reduceText(input, options)
-	}
-
-	return string(encoded), []string{"sampled json"}
-}
-
-func reduceJSONValue(value any, depth int) any {
-	if depth >= 4 {
-		return "<depth limit>"
-	}
-
-	switch typed := value.(type) {
-	case map[string]any:
-		result := map[string]any{}
-		keys := make([]string, 0, len(typed))
-		for key := range typed {
-			keys = append(keys, key)
-		}
-		sort.Strings(keys)
-		for _, key := range take(keys, 24) {
-			result[key] = reduceJSONValue(typed[key], depth+1)
-		}
-		if len(keys) > 24 {
-			result["_hef_omitted_keys"] = len(keys) - 24
-		}
-		return result
-	case []any:
-		result := []any{}
-		for _, item := range takeAny(typed, 8) {
-			result = append(result, reduceJSONValue(item, depth+1))
-		}
-		if len(typed) > 8 {
-			result = append(result, map[string]any{"_hef_omitted_items": len(typed) - 8})
-		}
-		return result
-	case string:
-		if runeLen(typed) > 240 {
-			return truncateRunes(typed, 240) + "... <truncated " + strconv.Itoa(runeLen(typed)-240) + " chars>"
-		}
-		return typed
-	default:
-		return typed
-	}
-}
-
-func splitPriorityLines(lines []string, keywords []string) ([]string, []string) {
-	return splitPriorityLinesWithContext(lines, keywords)
-}
-
-func splitPriorityLinesWithContext(lines []string, keywords []string) ([]string, []string) {
-	priority := []string{}
-	rest := []string{}
-	includeStackContext := false
-	for _, line := range lines {
-		lower := strings.ToLower(line)
-		found := false
-		for _, keyword := range keywords {
-			if strings.Contains(lower, keyword) {
-				found = true
-				break
-			}
-		}
-		if found {
-			priority = append(priority, line)
-			includeStackContext = isErrorLike(lower) || isStackTraceStart(lower)
-			continue
-		}
-		if isSCMStatusLine(line) {
-			priority = append(priority, line)
-			includeStackContext = false
-			continue
-		}
-		if includeStackContext && isStackTraceLine(line) {
-			priority = append(priority, line)
-			continue
-		}
-		includeStackContext = false
-		rest = append(rest, line)
-	}
-	return priority, rest
-}
-
-func isSCMStatusLine(line string) bool {
-	return scmStatusLinePattern.MatchString(line)
-}
-
-func isErrorLike(lower string) bool {
-	return strings.Contains(lower, "error") ||
-		strings.Contains(lower, "exception") ||
-		strings.Contains(lower, "failed") ||
-		strings.Contains(lower, "fatal")
-}
-
-func isStackTraceStart(lower string) bool {
-	return strings.Contains(lower, "stacktrace") ||
-		strings.Contains(lower, "stack trace")
-}
-
-func isStackTraceLine(line string) bool {
-	trimmed := strings.TrimSpace(line)
-	lower := strings.ToLower(trimmed)
-	return strings.HasPrefix(trimmed, "at ") ||
-		strings.Contains(trimmed, " at ") ||
-		strings.HasPrefix(trimmed, "---") ||
-		strings.Contains(lower, "stacktrace") ||
-		strings.Contains(lower, "stack trace")
-}
-
-func prioritizeLines(lines []string, options Options) []string {
-	if focus := focusKeywords(options); len(focus) > 0 {
-		priority, rest := splitPriorityLines(lines, focus)
-		lines = append(priority, rest...)
-	}
-
-	switch strings.ToLower(options.Keep) {
-	case "all":
-		return lines
-	case "warning":
-		priority, rest := splitPriorityLines(lines, []string{"warning", "warn"})
-		return append(priority, rest...)
-	case "path":
-		priority, rest := splitPriorityLines(lines, []string{"/", "\\"})
-		return append(priority, rest...)
-	default:
-		priority, rest := splitPriorityLines(lines, []string{"error", "exception", "failed", "fatal", "denied"})
-		return append(priority, rest...)
-	}
-}
-
-func focusKeywords(options Options) []string {
-	parts := strings.Split(options.Focus, ",")
-	keywords := make([]string, 0, len(parts))
-	for _, part := range parts {
-		trimmed := strings.ToLower(strings.TrimSpace(part))
-		if trimmed == "" {
-			continue
-		}
-		keywords = append(keywords, trimmed)
-	}
-	return keywords
-}
-
-func containsAny(value string, keywords []string) bool {
-	for _, keyword := range keywords {
-		if strings.Contains(value, keyword) {
-			return true
-		}
-	}
-	return false
+	return current + summary(input, current, applied), nil
 }
 
 func normalizeInput(input string) string {
 	input = strings.TrimPrefix(input, "\ufeff")
 	input = ansiEscapePattern.ReplaceAllString(input, "")
-	return strings.ReplaceAll(input, "\x00", "")
+	input = strings.ReplaceAll(input, "\r\n", "\n")
+	input = strings.ReplaceAll(input, "\r", "\n")
+	input = strings.ReplaceAll(input, "\x00", "")
+	return strings.TrimRight(input, "\n")
 }
 
-func unityKeywords() []string {
-	return []string{"error", "exception", "failed", "stacktrace", "assert", "shader", "build failed", "compilation", " at ", "at ", "--- end of stack trace"}
+func repeatedLineFilter(input string, options Options) (string, bool) {
+	lines := linesOf(input)
+	if len(lines) < 3 {
+		return "", false
+	}
+	out := make([]string, 0, len(lines))
+	changed := false
+	for i := 0; i < len(lines); {
+		j := i + 1
+		for j < len(lines) && lines[j] == lines[i] {
+			j++
+		}
+		count := j - i
+		if count >= 3 {
+			out = append(out, fmt.Sprintf("%s (x%d)", lines[i], count))
+			changed = true
+		} else {
+			out = append(out, lines[i:j]...)
+		}
+		i = j
+	}
+	return strings.Join(out, "\n"), changed
 }
 
-func enforceLimits(input string, options Options) string {
-	lines := strings.Split(strings.TrimRight(input, "\r\n"), "\n")
+func sequentialRangeFilter(input string, options Options) (string, bool) {
+	lines := linesOf(input)
+	if len(lines) < 3 {
+		return "", false
+	}
+	out := make([]string, 0, len(lines))
+	changed := false
+	for i := 0; i < len(lines); {
+		run := findSequentialRun(lines, i)
+		if run.count >= 3 {
+			out = append(out, formatRange(run))
+			changed = true
+			i += run.count
+			continue
+		}
+		out = append(out, lines[i])
+		i++
+	}
+	return strings.Join(out, "\n"), changed
+}
+
+func pathLineGroupFilter(input string, options Options) (string, bool) {
+	lines := linesOf(input)
+	if len(lines) < 3 {
+		return "", false
+	}
+	groups := map[string][]matchLine{}
+	seenByPath := map[string]map[string]bool{}
+	order := []string{}
+	unmatched := []string{}
+	matches := 0
+	for _, line := range lines {
+		parts := pathLinePattern.FindStringSubmatch(line)
+		if len(parts) == 0 || !looksPathish(parts[1]) {
+			unmatched = append(unmatched, line)
+			continue
+		}
+		path := strings.ReplaceAll(parts[1], "\\", "/")
+		loc := parts[2]
+		if parts[3] != "" {
+			loc += ":" + parts[3]
+		}
+		if _, exists := groups[path]; !exists {
+			order = append(order, path)
+		}
+		key := loc + "\x00" + strings.TrimSpace(parts[4])
+		if seenByPath[path] == nil {
+			seenByPath[path] = map[string]bool{}
+		}
+		if !seenByPath[path][key] {
+			groups[path] = append(groups[path], matchLine{line: loc, text: strings.TrimSpace(parts[4])})
+			seenByPath[path][key] = true
+		}
+		matches++
+	}
+	if matches < 3 || matches < len(lines)/2 {
+		return "", false
+	}
+	sort.Strings(order)
+	root := commonPathRoot(order)
+	out := []string{}
+	if root != "" && len(root) >= 12 {
+		out = append(out, "$root="+root)
+	}
+	for _, path := range order {
+		display := path
+		if root != "" && strings.HasPrefix(display, root) {
+			display = "$root" + strings.TrimPrefix(display, root)
+		}
+		items := groups[path]
+		out = append(out, fmt.Sprintf("%s (%d)", display, len(items)))
+		for _, item := range takeMatchLines(items, 4) {
+			out = append(out, fmt.Sprintf("  %s: %s", item.line, item.text))
+		}
+		if len(items) > 4 {
+			out = append(out, fmt.Sprintf("  ... <%d more>", len(items)-4))
+		}
+	}
+	if len(unmatched) > 0 && len(unmatched) <= 8 {
+		out = append(out, "## unmatched")
+		out = append(out, unmatched...)
+	}
+	return strings.Join(out, "\n"), true
+}
+
+func directoryGroupFilter(input string, options Options) (string, bool) {
+	lines := nonBlank(linesOf(input))
+	if len(lines) < 6 {
+		return "", false
+	}
+	normalized := make([]string, 0, len(lines))
+	for _, line := range lines {
+		line = strings.ReplaceAll(strings.TrimSpace(line), "\\", "/")
+		if !looksPathish(line) {
+			return "", false
+		}
+		normalized = append(normalized, line)
+	}
+	root := commonPathRoot(normalized)
+	if root == "" {
+		return "", false
+	}
+	groups := map[string][]string{}
+	dirs := []string{}
+	for _, path := range normalized {
+		dir, file := splitPath(path)
+		if _, exists := groups[dir]; !exists {
+			dirs = append(dirs, dir)
+		}
+		groups[dir] = append(groups[dir], file)
+	}
+	sort.Strings(dirs)
+	out := []string{"$root=" + root}
+	for _, dir := range dirs {
+		display := dir
+		if strings.HasPrefix(display, root) {
+			display = "$root" + strings.TrimPrefix(display, root)
+		}
+		out = append(out, fmt.Sprintf("%s/ (%d)", strings.TrimRight(display, "/"), len(groups[dir])))
+		files := append([]string{}, groups[dir]...)
+		sort.Strings(files)
+		for _, file := range take(files, 8) {
+			out = append(out, "  "+file)
+		}
+		if len(files) > 8 {
+			out = append(out, fmt.Sprintf("  ... <%d more>", len(files)-8))
+		}
+	}
+	return strings.Join(out, "\n"), true
+}
+func commonPrefixFilter(input string, options Options) (string, bool) {
+	lines := nonBlank(linesOf(input))
+	if len(lines) < 3 {
+		return "", false
+	}
+	prefix := trimPrefixBoundary(commonPrefix(lines))
+	if len(prefix) < 20 {
+		return "", false
+	}
+	out := []string{"$prefix1=" + prefix}
+	for _, line := range linesOf(input) {
+		out = append(out, strings.Replace(line, prefix, "$prefix1", 1))
+	}
+	return strings.Join(out, "\n"), true
+}
+
+func dictionaryTokenFilter(input string, options Options) (string, bool) {
+	matches := longTokenPattern.FindAllString(input, -1)
+	if len(matches) == 0 {
+		return "", false
+	}
+	counts := map[string]int{}
+	for _, match := range matches {
+		counts[match]++
+	}
+	tokens := []string{}
+	for token, count := range counts {
+		if count >= 2 && len(token) >= 24 {
+			tokens = append(tokens, token)
+		}
+	}
+	if len(tokens) == 0 {
+		return "", false
+	}
+	sort.Slice(tokens, func(i, j int) bool { return len(tokens[i]) > len(tokens[j]) })
+	if len(tokens) > 6 {
+		tokens = tokens[:6]
+	}
+	out := input
+	defs := []string{}
+	for i, token := range tokens {
+		name := fmt.Sprintf("$t%d", i+1)
+		out = strings.ReplaceAll(out, token, name)
+		defs = append(defs, name+"="+token)
+	}
+	return strings.Join(defs, "\n") + "\n" + out, true
+}
+
+func boundedSampleFilter(input string, options Options) (string, bool) {
 	maxLines := options.MaxLines
 	if maxLines <= 0 {
 		maxLines = DefaultOptions().MaxLines
 	}
-	if len(lines) > maxLines {
-		lines = append(lines[:maxLines], fmt.Sprintf("... <hef output limit reached: omitted %d more reduced lines. Narrow the command and rerun; use more specific paths, globs, filters, or counts.>", len(lines)-maxLines))
-	}
-
-	output := strings.Join(lines, "\n")
 	maxChars := options.MaxChars
 	if maxChars <= 0 {
 		maxChars = DefaultOptions().MaxChars
 	}
-	if runeLen(output) > maxChars {
-		omitted := runeLen(output) - maxChars
-		output = truncateRunes(output, maxChars) + fmt.Sprintf("\n... <hef output limit reached: omitted %d more reduced chars. Narrow the command and rerun; use more specific paths, globs, filters, or counts.>", omitted)
+	lines := linesOf(input)
+	if len(lines) <= maxLines && len(input) <= maxChars {
+		return "", false
 	}
-
-	return output
+	important := importantLines(lines, focusKeywords(options))
+	head := maxLines / 4
+	if head < 6 {
+		head = 6
+	}
+	tail := maxLines / 4
+	if tail < 6 {
+		tail = 6
+	}
+	out := []string{"## head"}
+	out = append(out, take(lines, head)...)
+	if len(important) > 0 {
+		out = append(out, "## important")
+		out = append(out, take(important, maxLines/3)...)
+	}
+	out = append(out, "## tail")
+	out = append(out, takeTail(lines, tail)...)
+	out = append(out, fmt.Sprintf("... <omitted %d lines>", omittedCount(len(lines), head, tail)))
+	result := strings.Join(out, "\n")
+	if len(result) > maxChars {
+		result = result[:maxChars-32] + "\n... <char limit reached>"
+	}
+	return result, true
 }
 
-func runeLen(value string) int {
-	return len([]rune(value))
-}
-
-func truncateRunes(value string, max int) string {
-	runes := []rune(value)
-	if len(runes) <= max {
-		return value
-	}
-	return string(runes[:max])
-}
-
-func formatSummary(s stats) string {
-	sections := strings.Join(s.SectionsKept, ", ")
-	if sections == "" {
-		sections = "none"
-	}
-	return fmt.Sprintf("\n\n--- hef summary ---\nmode=%s lines=%d->%d chars=%d->%d kept=%s\n",
-		s.Mode,
-		s.InputLines,
-		s.OutputLines,
-		s.InputChars,
-		s.OutputChars,
-		sections)
-}
-
-func nonEmptyLines(input string) []string {
-	raw := strings.Split(strings.ReplaceAll(input, "\r\n", "\n"), "\n")
-	lines := make([]string, 0, len(raw))
-	for _, line := range raw {
-		trimmed := strings.TrimPrefix(strings.TrimRight(line, " \t"), "\ufeff")
-		if strings.TrimSpace(trimmed) == "" {
-			continue
-		}
-		lines = append(lines, trimmed)
-	}
-	return lines
-}
-
-func collapseDuplicateLines(lines []string) []string {
-	out := []string{}
-	var previous string
-	count := 0
-	flush := func() {
-		if previous == "" {
-			return
-		}
-		out = append(out, previous)
-		if count > 1 {
-			out = append(out, fmt.Sprintf("  <repeated %d times>", count))
-		}
-	}
-
-	for _, line := range lines {
-		if line == previous {
+func findSequentialRun(lines []string, start int) rangeRun {
+	best := rangeRun{count: 1}
+	for _, first := range numericCandidates(lines[start]) {
+		current := first
+		count := 1
+		for i := start + 1; i < len(lines); i++ {
+			next, ok := matchingNumber(lines[i], current)
+			if !ok || next.value != current.value+1 {
+				break
+			}
+			current = next
 			count++
+		}
+		if count > best.count {
+			best = rangeRun{start: first, end: current, count: count}
+		}
+	}
+	return best
+}
+
+func numericCandidates(line string) []numericPart {
+	matches := numberPattern.FindAllStringIndex(line, -1)
+	parts := make([]numericPart, 0, len(matches))
+	for _, match := range matches {
+		raw := line[match[0]:match[1]]
+		value, err := strconv.Atoi(raw)
+		if err != nil {
 			continue
 		}
-		flush()
-		previous = line
-		count = 1
+		parts = append(parts, numericPart{prefix: line[:match[0]], suffix: line[match[1]:], raw: raw, value: value, width: len(raw)})
 	}
-	flush()
-	return out
+	return parts
 }
 
-func countLines(input string) int {
-	if strings.TrimSpace(input) == "" {
-		return 0
+func matchingNumber(line string, previous numericPart) (numericPart, bool) {
+	for _, candidate := range numericCandidates(line) {
+		if candidate.prefix == previous.prefix && candidate.suffix == previous.suffix && candidate.width == previous.width {
+			return candidate, true
+		}
 	}
-	return len(nonEmptyLines(input))
+	return numericPart{}, false
 }
 
-func sample(lines []string, max int) []string {
-	if len(lines) <= max {
-		return lines
+func formatRange(run rangeRun) string {
+	end := run.end.raw
+	if run.start.width > 1 {
+		end = fmt.Sprintf("%0*d", run.start.width, run.end.value)
 	}
-	return lines[:max]
+	return fmt.Sprintf("%s%s..%s%s (%d lines)", run.start.prefix, run.start.raw, end, run.start.suffix, run.count)
 }
 
-func take[T any](items []T, max int) []T {
-	if max < 0 {
-		max = 0
+func linesOf(input string) []string {
+	if input == "" {
+		return nil
 	}
-	if len(items) <= max {
-		return items
-	}
-	return items[:max]
+	return strings.Split(strings.TrimRight(input, "\n"), "\n")
 }
 
-func takeAny(items []any, max int) []any {
-	if len(items) <= max {
-		return items
+func takeMatchLines(values []matchLine, count int) []matchLine {
+	if count < 0 {
+		count = 0
 	}
-	return items[:max]
+	if len(values) <= count {
+		return append([]matchLine{}, values...)
+	}
+	return append([]matchLine{}, values[:count]...)
 }
 
-func takeMatches(items []grepMatch, max int) []grepMatch {
-	if len(items) <= max {
-		return items
+func looksPathish(value string) bool {
+	value = strings.TrimSpace(strings.ReplaceAll(value, "\\", "/"))
+	if value == "" {
+		return false
 	}
-	return items[:max]
+	return strings.Contains(value, "/") && (strings.Contains(lastPathPart(value), ".") || strings.Contains(value, ":/"))
 }
 
 func splitPath(path string) (string, string) {
-	index := strings.LastIndex(path, "/")
-	if index < 0 {
-		return ".", path
+	path = strings.TrimRight(path, "/")
+	idx := strings.LastIndex(path, "/")
+	if idx < 0 {
+		return "", path
 	}
-	return path[:index], path[index+1:]
+	return path[:idx], path[idx+1:]
 }
 
-func commonPathPrefix(paths []string) string {
-	if len(paths) < 2 {
+func lastPathPart(path string) string {
+	_, file := splitPath(path)
+	return file
+}
+
+func commonPathRoot(paths []string) string {
+	if len(paths) == 0 {
 		return ""
 	}
-
-	cleaned := make([]string, 0, len(paths))
+	dirs := make([][]string, 0, len(paths))
 	for _, path := range paths {
-		normalized := strings.ReplaceAll(strings.TrimSpace(path), "\\", "/")
-		if normalized == "" {
-			continue
-		}
-		dir, _ := splitPath(normalized)
-		if dir == "." {
-			dir = normalized
-		}
-		cleaned = append(cleaned, strings.TrimRight(dir, "/"))
+		dir, _ := splitPath(path)
+		dirs = append(dirs, strings.Split(strings.Trim(dir, "/"), "/"))
 	}
-	if len(cleaned) < 2 {
+	if len(dirs) == 0 || len(dirs[0]) == 0 {
 		return ""
 	}
-
-	prefixParts := strings.Split(cleaned[0], "/")
-	for _, path := range cleaned[1:] {
-		parts := strings.Split(path, "/")
-		max := len(prefixParts)
-		if len(parts) < max {
-			max = len(parts)
+	common := []string{}
+	for i, part := range dirs[0] {
+		for _, dir := range dirs[1:] {
+			if i >= len(dir) || dir[i] != part {
+				return strings.Join(common, "/")
+			}
 		}
-		i := 0
-		for i < max && prefixParts[i] == parts[i] {
-			i++
-		}
-		prefixParts = prefixParts[:i]
-		if len(prefixParts) == 0 {
-			return ""
+		common = append(common, part)
+	}
+	return strings.Join(common, "/")
+}
+func nonBlank(lines []string) []string {
+	out := []string{}
+	for _, line := range lines {
+		if strings.TrimSpace(line) != "" {
+			out = append(out, line)
 		}
 	}
-
-	root := strings.Join(prefixParts, "/")
-	if len(root) < 24 || !strings.Contains(root, "/") {
-		return ""
-	}
-	return root
+	return out
 }
 
-func displayPath(path, root string) string {
-	normalized := strings.ReplaceAll(path, "\\", "/")
-	if root == "" {
-		return normalized
+func commonPrefix(values []string) string {
+	if len(values) == 0 {
+		return ""
 	}
-	if normalized == root {
-		return "$root"
+	prefix := values[0]
+	for _, value := range values[1:] {
+		for prefix != "" && !strings.HasPrefix(value, prefix) {
+			prefix = prefix[:len(prefix)-1]
+		}
 	}
-	prefix := strings.TrimRight(root, "/") + "/"
-	if strings.HasPrefix(normalized, prefix) {
-		return "$root/" + strings.TrimPrefix(normalized, prefix)
+	return prefix
+}
+
+func trimPrefixBoundary(prefix string) string {
+	idx := strings.LastIndexAny(prefix, "/\\._:- ")
+	if idx <= 0 {
+		return prefix
 	}
-	return normalized
+	return prefix[:idx+1]
+}
+
+func importantLines(lines []string, focus []string) []string {
+	keys := append([]string{"error", "exception", "failed", "fatal", "denied", "warning", "panic"}, focus...)
+	seen := map[string]bool{}
+	out := []string{}
+	for _, line := range lines {
+		lower := strings.ToLower(line)
+		for _, key := range keys {
+			if key != "" && strings.Contains(lower, key) && !seen[line] {
+				out = append(out, line)
+				seen[line] = true
+				break
+			}
+		}
+	}
+	return out
+}
+
+func focusKeywords(options Options) []string {
+	parts := strings.Split(options.Focus, ",")
+	out := []string{}
+	for _, part := range parts {
+		part = strings.ToLower(strings.TrimSpace(part))
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
+func take(values []string, count int) []string {
+	if count < 0 {
+		count = 0
+	}
+	if len(values) <= count {
+		return append([]string{}, values...)
+	}
+	return append([]string{}, values[:count]...)
+}
+
+func takeTail(values []string, count int) []string {
+	if count < 0 {
+		count = 0
+	}
+	if len(values) <= count {
+		return append([]string{}, values...)
+	}
+	return append([]string{}, values[len(values)-count:]...)
+}
+
+func omittedCount(total int, head int, tail int) int {
+	omitted := total - head - tail
+	if omitted < 0 {
+		return 0
+	}
+	return omitted
+}
+
+func shorter(before string, after string) bool {
+	before = strings.TrimSpace(before)
+	after = strings.TrimSpace(after)
+	return after != "" && after != before && len(after) < len(before)
+}
+
+func summary(input string, output string, filters []string) string {
+	return fmt.Sprintf("\n\n--- hef summary ---\nfilters=%s lines=%d->%d chars=%d->%d\n",
+		strings.Join(filters, "+"),
+		len(linesOf(input)),
+		len(linesOf(output)),
+		len(input),
+		len(output))
 }
