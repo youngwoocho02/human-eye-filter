@@ -103,5 +103,5 @@ func printUpdateNotice() {
 }
 
 func printNotice(current, latest string) {
-	fmt.Fprintf(updateNoticeWriter, "\nUpdate available: %s -> %s\nRun \"hef update\" to upgrade.\n", current, latest)
+	_, _ = fmt.Fprintf(updateNoticeWriter, "\nUpdate available: %s -> %s\nRun \"hef update\" to upgrade.\n", current, latest)
 }

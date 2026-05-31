@@ -100,7 +100,9 @@ func runUpdate(args []string, stdout, stderr io.Writer) (int, error) {
 	}
 
 	_ = os.Remove(backup)
-	fmt.Fprintf(stdout, "Updated to %s\n", latest)
+	if _, err := fmt.Fprintf(stdout, "Updated to %s\n", latest); err != nil {
+		return 1, err
+	}
 	return 0, nil
 }
 
