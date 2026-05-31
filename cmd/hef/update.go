@@ -36,7 +36,9 @@ func runUpdate(args []string, stdout, stderr io.Writer) (int, error) {
 		return 2, err
 	}
 
-	fmt.Fprintln(stdout, "Checking for updates...")
+	if _, err := fmt.Fprintln(stdout, "Checking for updates..."); err != nil {
+		return 1, err
+	}
 	release, err := fetchLatestRelease()
 	if err != nil {
 		return 1, fmt.Errorf("failed to check for updates: %w", err)
@@ -45,11 +47,15 @@ func runUpdate(args []string, stdout, stderr io.Writer) (int, error) {
 	current := Version
 	latest := release.TagName
 	if current == latest {
-		fmt.Fprintf(stdout, "Already up to date (%s)\n", current)
+		if _, err := fmt.Fprintf(stdout, "Already up to date (%s)\n", current); err != nil {
+			return 1, err
+		}
 		return 0, nil
 	}
 
-	fmt.Fprintf(stdout, "Update available: %s -> %s\n", current, latest)
+	if _, err := fmt.Fprintf(stdout, "Update available: %s -> %s\n", current, latest); err != nil {
+		return 1, err
+	}
 	if *checkOnly {
 		return 0, nil
 	}
@@ -68,7 +74,9 @@ func runUpdate(args []string, stdout, stderr io.Writer) (int, error) {
 		return 1, fmt.Errorf("cannot resolve binary path: %w", err)
 	}
 
-	fmt.Fprintf(stdout, "Downloading %s...\n", asset.Name)
+	if _, err := fmt.Fprintf(stdout, "Downloading %s...\n", asset.Name); err != nil {
+		return 1, err
+	}
 	tmpFile, err := download(asset.BrowserDownloadURL, filepath.Dir(exe))
 	if err != nil {
 		return 1, fmt.Errorf("download failed: %w", err)
