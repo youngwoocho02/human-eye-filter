@@ -70,6 +70,9 @@ func setupClaude(home string, remove bool) (string, error) {
 	hookPath := filepath.Join(home, ".claude", "hooks", "hef-pipe.ps1")
 	settingsPath := filepath.Join(home, ".claude", "settings.json")
 	command := powerShellHookCommand(hookPath)
+	legacyHookPaths := []string{
+		filepath.Join(home, ".claude", "hooks", "warn-hef.ps1"),
+	}
 
 	if remove {
 		return removeClaudeHook(settingsPath, hookPath, command)
@@ -86,6 +89,13 @@ func setupClaude(home string, remove bool) (string, error) {
 
 	hooks := objectValue(settings, "hooks")
 	preToolUse := arrayValue(hooks, "PreToolUse")
+	for _, legacyPath := range legacyHookPaths {
+		legacyCommand := powerShellHookCommand(legacyPath)
+		preToolUse = removeClaudeHookCommand(preToolUse, legacyCommand)
+		if err := removeFileIfExists(legacyPath); err != nil {
+			return "", err
+		}
+	}
 	if !claudeHookPresent(preToolUse, command) {
 		entry := map[string]any{
 			"matcher": "Bash",
@@ -149,6 +159,9 @@ func setupCodex(home string, remove bool) (string, error) {
 	hookPath := filepath.Join(home, ".codex", "hooks", "hef-pipe.ps1")
 	configPath := filepath.Join(home, ".codex", "config.toml")
 	command := powerShellHookCommand(hookPath)
+	legacyHookPaths := []string{
+		filepath.Join(home, ".codex", "hooks", "warn-hef.ps1"),
+	}
 
 	if remove {
 		if err := removeFileIfExists(hookPath); err != nil {
@@ -165,10 +178,16 @@ func setupCodex(home string, remove bool) (string, error) {
 		return "", err
 	}
 	text := string(raw)
-	if strings.Contains(text, "command = '"+command+"'") {
-		return "hook already configured", nil
+	for _, legacyPath := range legacyHookPaths {
+		legacyCommand := powerShellHookCommand(legacyPath)
+		text = removeCodexHookBlock(text, legacyCommand)
+		if err := removeFileIfExists(legacyPath); err != nil {
+			return "", err
+		}
 	}
-	block := "\n[[hooks.PreToolUse]]\n\n[[hooks.PreToolUse.hooks]]\ntype = \"command\"\ncommand = '" + command + "'\ntimeout = 5\n"
+	text = removeCodexHookBlock(text, command)
+	text = removeEmptyCodexPreToolUseBlocks(text)
+	block := "\n[[hooks.PreToolUse]]\nmatcher = \"^(Bash|exec|shell_command)$\"\n\n[[hooks.PreToolUse.hooks]]\ntype = \"command\"\ncommand = '" + command + "'\ncommand_windows = '" + command + "'\ntimeout = 5\n"
 	if strings.TrimSpace(text) == "" {
 		text = strings.TrimLeft(block, "\n")
 	} else {
@@ -192,6 +211,18 @@ func removeCodexHook(configPath, command string) (string, error) {
 	if !strings.Contains(text, command) {
 		return "no change", nil
 	}
+	result := removeCodexHookBlock(text, command)
+	if result == text {
+		return "left config unchanged; manual removal needed", nil
+	}
+	result = removeEmptyCodexPreToolUseBlocks(result)
+	if err := writeText(configPath, result); err != nil {
+		return "", err
+	}
+	return "removed PreToolUse hook", nil
+}
+
+func removeCodexHookBlock(text, command string) string {
 	lines := strings.Split(text, "\n")
 	cmdLine := -1
 	for i, line := range lines {
@@ -201,19 +232,19 @@ func removeCodexHook(configPath, command string) (string, error) {
 		}
 	}
 	if cmdLine < 0 {
-		return "no change", nil
+		return text
 	}
 	start := cmdLine
-	for start >= 0 && strings.TrimSpace(lines[start]) != "[[hooks.PreToolUse]]" {
+	for start >= 0 && strings.TrimSpace(lines[start]) != "[[hooks.PreToolUse.hooks]]" {
 		start--
 	}
 	if start < 0 {
-		return "left config unchanged; manual removal needed", nil
+		return text
 	}
 	end := cmdLine + 1
 	for end < len(lines) {
 		trimmed := strings.TrimSpace(lines[end])
-		if strings.HasPrefix(trimmed, "[") && !strings.HasPrefix(trimmed, "[[hooks.PreToolUse.hooks]]") {
+		if strings.HasPrefix(trimmed, "[") {
 			break
 		}
 		end++
@@ -227,10 +258,43 @@ func removeCodexHook(configPath, command string) (string, error) {
 	if result != "" {
 		result += "\n"
 	}
-	if err := writeText(configPath, result); err != nil {
-		return "", err
+	return result
+}
+
+func removeEmptyCodexPreToolUseBlocks(text string) string {
+	lines := strings.Split(text, "\n")
+	kept := make([]string, 0, len(lines))
+	for i := 0; i < len(lines); {
+		if strings.TrimSpace(lines[i]) != "[[hooks.PreToolUse]]" {
+			kept = append(kept, lines[i])
+			i++
+			continue
+		}
+
+		start := i
+		end := i + 1
+		hasHook := false
+		for end < len(lines) {
+			trimmed := strings.TrimSpace(lines[end])
+			if strings.HasPrefix(trimmed, "[") && trimmed != "[[hooks.PreToolUse.hooks]]" {
+				break
+			}
+			if trimmed == "[[hooks.PreToolUse.hooks]]" {
+				hasHook = true
+			}
+			end++
+		}
+		if hasHook {
+			kept = append(kept, lines[start:end]...)
+		}
+		i = end
 	}
-	return "removed PreToolUse hook", nil
+
+	result := strings.TrimRight(strings.Join(kept, "\n"), "\r\n")
+	if result != "" {
+		result += "\n"
+	}
+	return result
 }
 
 func setupOpencode(home string, remove bool) (string, error) {
@@ -238,6 +302,8 @@ func setupOpencode(home string, remove bool) (string, error) {
 	pluginPath := filepath.Join(dir, "plugins", "hef.ts")
 	configPath := filepath.Join(dir, "opencode.json")
 	entry := "./plugins/hef.ts"
+	legacyPluginPath := filepath.Join(dir, "plugins", "hef-guard.ts")
+	legacyEntry := "C:/Users/young/.config/opencode/plugins/hef-guard.ts"
 
 	if remove {
 		if err := removeFileIfExists(pluginPath); err != nil {
@@ -269,11 +335,15 @@ func setupOpencode(home string, remove bool) (string, error) {
 		return "", err
 	}
 	plugins := arrayValue(config, "plugin")
+	plugins = removeString(plugins, legacyEntry)
 	if !containsString(plugins, entry) {
 		plugins = append(plugins, entry)
 	}
 	config["plugin"] = plugins
 	if err := writeJSON(configPath, config); err != nil {
+		return "", err
+	}
+	if err := removeFileIfExists(legacyPluginPath); err != nil {
 		return "", err
 	}
 	return "installed plugin", nil
@@ -293,41 +363,72 @@ try {
     exit 0
 }
 
-$toolInput = $hookInput.PSObject.Properties["tool_input"].Value
-if ($null -eq $toolInput) {
-    exit 0
+function Get-PropertyValue {
+    param($Object, [string]$Name)
+    if ($null -eq $Object) { return $null }
+    $property = $Object.PSObject.Properties[$Name]
+    if ($null -eq $property) { return $null }
+    return $property.Value
 }
 
-$commandProperty = $toolInput.PSObject.Properties["command"]
-if ($null -eq $commandProperty -or -not ($commandProperty.Value -is [string])) {
-    exit 0
-}
+function Add-CommandTexts {
+    param($Object, [System.Collections.Generic.List[string]]$Commands)
+    if ($null -eq $Object) { return }
 
-$command = $commandProperty.Value
-if ([string]::IsNullOrWhiteSpace($command)) {
-    exit 0
-}
+    $command = Get-PropertyValue -Object $Object -Name "command"
+    if ($command -is [string]) { $Commands.Add($command) }
 
-$backgroundProperty = $toolInput.PSObject.Properties["run_in_background"]
-if ($null -ne $backgroundProperty -and $backgroundProperty.Value -eq $true) {
-    exit 0
-}
+    foreach ($name in @("tool_input", "parameters")) {
+        $child = Get-PropertyValue -Object $Object -Name $name
+        if ($null -ne $child) { Add-CommandTexts -Object $child -Commands $Commands }
+    }
 
-if ($command -match "(?i)(^|\|\s*&?\s*)hef(?:\.exe)?\b") {
-    exit 0
-}
-
-$output = @{
-    hookSpecificOutput = @{
-        hookEventName = "PreToolUse"
-        permissionDecision = "allow"
-        updatedInput = @{
-            command = "$command | hef"
-        }
+    $toolUses = Get-PropertyValue -Object $Object -Name "tool_uses"
+    if ($null -ne $toolUses) {
+        foreach ($toolUse in @($toolUses)) { Add-CommandTexts -Object $toolUse -Commands $Commands }
     }
 }
 
-[Console]::Out.WriteLine(($output | ConvertTo-Json -Compress))
+$toolInput = Get-PropertyValue -Object $hookInput -Name "tool_input"
+if ($null -ne $toolInput) {
+    $backgroundProperty = $toolInput.PSObject.Properties["run_in_background"]
+    if ($null -ne $backgroundProperty -and $backgroundProperty.Value -eq $true) {
+        exit 0
+    }
+}
+
+$commands = New-Object 'System.Collections.Generic.List[string]'
+Add-CommandTexts -Object $hookInput -Commands $commands
+if ($commands.Count -eq 0) {
+    exit 0
+}
+
+foreach ($command in $commands) {
+    if ([string]::IsNullOrWhiteSpace($command)) {
+        continue
+    }
+
+    if ($command -match "(?i)(^|[\s;&|])hef(?:\.exe)?(\s|$)" -or
+        $command -match "(?i)(\[no-hef\]|--no-hef|#\s*no-hef)") {
+        continue
+    }
+
+    $reason = "경고: 긴 출력이 예상되는 셸 명령에는 human-eye-filter(hef)를 붙이세요." +
+        [Environment]::NewLine + "권장: <command> | hef" +
+        [Environment]::NewLine + "드문 예외: 명령에 [no-hef], --no-hef, 또는 # no-hef를 명시하고 다시 실행하세요."
+    $output = @{
+        hookSpecificOutput = @{
+            hookEventName = "PreToolUse"
+            permissionDecision = "deny"
+            permissionDecisionReason = $reason
+        }
+    }
+
+    [Console]::Error.WriteLine($reason)
+    [Console]::Out.WriteLine(($output | ConvertTo-Json -Compress))
+    exit 2
+}
+
 exit 0
 `
 }
@@ -335,17 +436,27 @@ exit 0
 func opencodePluginSource() string {
 	return `import type { Plugin } from "@opencode-ai/plugin"
 
+const HEF_COMMAND_PATTERN = /(^|[\s;&|])hef(?:\.exe)?(\s|$)/i
+const HEF_OPT_OUT_PATTERN = /(\[no-hef\]|--no-hef|#\s*no-hef)/i
+
 export const hef: Plugin = async () => {
   return {
     "tool.execute.before": async (input, output) => {
       const tool = input.tool
       if (tool !== "bash" && tool !== "shell") return
 
-      const command = output.args?.command
+      const args = output.args ?? {}
+      const command = args.command
+      const description = args.description
       if (typeof command !== "string" || command.trim().length === 0) return
-      if (/\|\s*&?\s*hef(?:\.exe)?\b/i.test(command)) return
+      if (HEF_COMMAND_PATTERN.test(command)) return
+      if (HEF_OPT_OUT_PATTERN.test(command)) return
+      if (typeof description === "string" && HEF_OPT_OUT_PATTERN.test(description)) return
 
-      output.args.command = command + " | hef"
+      throw new Error(
+        "[hef] 긴 출력이 예상되는 셸 명령에는 human-eye-filter(hef)를 붙이세요. " +
+        "권장: '<command> | hef'. 드문 예외는 description에 '[no-hef]' 또는 명령에 '# no-hef'를 명시하세요."
+      )
     },
   }
 }

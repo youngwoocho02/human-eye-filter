@@ -41,16 +41,17 @@ curl -fsSL https://raw.githubusercontent.com/youngwoocho02/human-eye-filter/mast
 ```
 ## クイックスタート
 
-エージェントのフックを一度登録すれば完了です。その後、エージェントは通常どおりシェルコマンドを実行し、`hef` が自動で付きます。
+エージェントのフックを一度登録すれば完了です。その後、エージェントが `hef` なしでシェルコマンドを実行しようとすると警告します。
 
 ```sh
 hef setup --agent all
 ```
-自分でフィルターしたい場合は、手動のパイプもそのまま使えます。
+長い出力が予想されるコマンドには `hef` を付けます。
 
 ```sh
 some-command | hef
 ```
+本当にまれな例外では、`[no-hef]`、`--no-hef`、`# no-hef` のような明示的な opt-out マーカーを入れます。
 ## どう縮むか
 
 `hef` は 7 つの折りたたみパスを実行し、各パスは結果が実際に短くなる場合のみ適用され、最後に 1 行のサマリーフッターを付加します。以下の例はすべて実際の `hef` 出力です。
@@ -264,6 +265,8 @@ hef update --check
 - `claude`: Claude Code `PreToolUse` フックスクリプトを書き込みます。
 - `codex`: OpenAI Codex `PreToolUse` フックスクリプトを書き込みます。
 - `opencode`: OpenCode `tool.execute.before` プラグインを書き込みます。
+
+生成されたフック/プラグインはコマンドを書き換えません。コマンドに `hef` がなく、明示的な opt-out マーカーもない場合は警告でツール呼び出しを止めます。
 
 削除:
 

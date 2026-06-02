@@ -41,16 +41,17 @@ curl -fsSL https://raw.githubusercontent.com/youngwoocho02/human-eye-filter/mast
 ```
 ## 빠른 사용
 
-에이전트 훅을 한 번 등록하면 끝입니다. 이후 에이전트는 평소처럼 셸 명령을 실행하고, `hef`가 자동으로 붙습니다.
+에이전트 훅을 한 번 등록하면 끝입니다. 이후 에이전트가 `hef` 없이 셸 명령을 실행하려 하면 경고합니다.
 
 ```sh
 hef setup --agent all
 ```
-직접 필터링하고 싶을 때는 수동 파이프도 그대로 쓸 수 있습니다.
+긴 출력이 예상되는 명령에는 `hef`를 붙입니다.
 
 ```sh
 some-command | hef
 ```
+정말 드문 경우 `hef`를 붙이면 안 되는 명령은 `[no-hef]`, `--no-hef`, `# no-hef` 같은 명시적 우회 표식을 넣습니다.
 ## 어떻게 줄어드나
 
 `hef`는 7개의 접기 패스를 실행하며, 각 패스는 결과가 실제로 짧아질 때만 적용되고, 마지막에 한 줄짜리 요약 푸터를 붙입니다. 아래 예시는 모두 실제 `hef` 출력입니다.
@@ -264,6 +265,8 @@ hef update --check
 - `claude`: Claude Code `PreToolUse` 훅 스크립트를 씁니다.
 - `codex`: OpenAI Codex `PreToolUse` 훅 스크립트를 씁니다.
 - `opencode`: OpenCode `tool.execute.before` 플러그인을 씁니다.
+
+생성된 훅/플러그인은 명령을 자동으로 고쳐 쓰지 않습니다. 명령에 `hef`가 없고 명시적 우회 표식도 없으면 경고로 도구 호출을 막습니다.
 
 제거:
 

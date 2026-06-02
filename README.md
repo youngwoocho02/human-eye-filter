@@ -41,16 +41,17 @@ curl -fsSL https://raw.githubusercontent.com/youngwoocho02/human-eye-filter/mast
 ```
 ## Quick Start
 
-Register the agent hook once. After that, agents keep running normal shell commands and `hef` is appended automatically.
+Register the agent hook once. After that, agents are warned when a shell command does not use `hef`.
 
 ```sh
 hef setup --agent all
 ```
-Manual piping still works when you want to filter a command yourself:
+Use `hef` on commands that may produce long output:
 
 ```sh
 some-command | hef
 ```
+For rare cases where piping through `hef` is not appropriate, add an explicit opt-out marker such as `[no-hef]`, `--no-hef`, or `# no-hef`.
 ## What Changes
 
 `hef` runs seven collapsing passes, applying each only when it makes the result shorter, then appends a one-line summary footer. Every example below is real `hef` output.
@@ -264,6 +265,8 @@ Supported agents:
 - `claude` writes a Claude Code `PreToolUse` hook script.
 - `codex` writes a Codex `PreToolUse` hook script.
 - `opencode` writes an OpenCode `tool.execute.before` plugin.
+
+The generated hook/plugin does not rewrite commands. It blocks the tool call with a warning unless the command already uses `hef` or includes an explicit opt-out marker.
 
 Remove the generated setup:
 
