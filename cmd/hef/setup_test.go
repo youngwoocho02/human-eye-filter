@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -116,7 +117,7 @@ func TestCodexHookMatcherIncludesKnownShellToolNames(t *testing.T) {
 		t.Fatalf("unexpected summary: %s", summary)
 	}
 
-	configPath := dir + `\.codex\config.toml`
+	configPath := filepath.Join(dir, ".codex", "config.toml")
 	raw, err := os.ReadFile(configPath)
 	if err != nil {
 		t.Fatal(err)
