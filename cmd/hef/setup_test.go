@@ -17,6 +17,9 @@ func TestPipeHookScriptWarnsWithoutHef(t *testing.T) {
 	if strings.Contains(script, "updatedInput") {
 		t.Fatalf("hook script should warn instead of rewriting command:\n%s", script)
 	}
+	if strings.Contains(script, "Error.WriteLine") || strings.Contains(script, "exit 2") {
+		t.Fatalf("Codex hook script should deny with JSON stdout instead of failing:\n%s", script)
+	}
 	if strings.Contains(script, "humaneye") {
 		t.Fatalf("hook script should use hef command name only:\n%s", script)
 	}
@@ -107,7 +110,7 @@ timeout = 5
 	}
 }
 
-func TestCodexHookMatcherIncludesKnownShellToolNames(t *testing.T) {
+func TestCodexHookUsesBashMatcher(t *testing.T) {
 	dir := t.TempDir()
 	summary, err := setupCodex(dir, false)
 	if err != nil {
@@ -123,9 +126,13 @@ func TestCodexHookMatcherIncludesKnownShellToolNames(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(raw)
-	for _, want := range []string{"Bash", "exec", "shell_command"} {
-		if !strings.Contains(text, want) {
-			t.Fatalf("expected matcher to contain %s:\n%s", want, text)
-		}
+	if !strings.Contains(text, `matcher = "^Bash$"`) {
+		t.Fatalf("expected Codex hef hook to match Bash only:\n%s", text)
+	}
+	if strings.Contains(text, "exec|shell_command") {
+		t.Fatalf("expected Codex hef hook not to use non-canonical tool aliases:\n%s", text)
+	}
+	if !strings.Contains(text, "hef-pipe.ps1") {
+		t.Fatalf("expected Codex hef hook command:\n%s", text)
 	}
 }

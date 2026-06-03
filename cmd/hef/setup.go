@@ -187,7 +187,7 @@ func setupCodex(home string, remove bool) (string, error) {
 	}
 	text = removeCodexHookBlock(text, command)
 	text = removeEmptyCodexPreToolUseBlocks(text)
-	block := "\n[[hooks.PreToolUse]]\nmatcher = \"^(Bash|exec|shell_command)$\"\n\n[[hooks.PreToolUse.hooks]]\ntype = \"command\"\ncommand = '" + command + "'\ncommand_windows = '" + command + "'\ntimeout = 5\n"
+	block := "\n[[hooks.PreToolUse]]\nmatcher = \"^Bash$\"\n\n[[hooks.PreToolUse.hooks]]\ntype = \"command\"\ncommand = '" + command + "'\ncommand_windows = '" + command + "'\ntimeout = 5\n"
 	if strings.TrimSpace(text) == "" {
 		text = strings.TrimLeft(block, "\n")
 	} else {
@@ -424,9 +424,8 @@ foreach ($command in $commands) {
         }
     }
 
-    [Console]::Error.WriteLine($reason)
     [Console]::Out.WriteLine(($output | ConvertTo-Json -Compress))
-    exit 2
+    exit 0
 }
 
 exit 0
