@@ -9,7 +9,7 @@ import (
 
 func TestPipeHookScriptWarnsWithoutHef(t *testing.T) {
 	script := pipeHookScript()
-	for _, want := range []string{"permissionDecision = \"deny\"", "permissionDecisionReason", "Add-CommandTexts", "parameters", "[no-hef]", "--no-hef", "#\\s*no-hef", "hef(?:\\.exe)?"} {
+	for _, want := range []string{"permissionDecision = \"deny\"", "permissionDecisionReason", "Add-CommandTexts", "parameters", "\\[no-hef\\]", "--no-hef", "#\\s*no-hef", "hef(?:\\.exe)?", "반드시 human-eye-filter(hef)를 사용하세요", "특수한 경우에만"} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("expected %q in setup hook script:\n%s", want, script)
 		}
@@ -27,7 +27,7 @@ func TestPipeHookScriptWarnsWithoutHef(t *testing.T) {
 
 func TestOpencodePluginWarnsWithoutHef(t *testing.T) {
 	source := opencodePluginSource()
-	for _, want := range []string{"export const hef", "throw new Error", "[no-hef]", "--no-hef", "#\\s*no-hef", "tool.execute.before"} {
+	for _, want := range []string{"export const hef", "throw new Error", "[no-hef]", "--no-hef", "#\\s*no-hef", "tool.execute.before", "반드시 human-eye-filter(hef)를 사용하세요", "특수한 경우에만"} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("expected %q in OpenCode plugin:\n%s", want, source)
 		}

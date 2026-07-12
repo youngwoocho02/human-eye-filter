@@ -413,9 +413,8 @@ foreach ($command in $commands) {
         continue
     }
 
-    $reason = "경고: 긴 출력이 예상되는 셸 명령에는 human-eye-filter(hef)를 붙이세요." +
-        [Environment]::NewLine + "권장: <command> | hef" +
-        [Environment]::NewLine + "드문 예외: 명령에 [no-hef], --no-hef, 또는 # no-hef를 명시하고 다시 실행하세요."
+    $reason = "긴 출력이 예상되는 셸 명령에는 반드시 human-eye-filter(hef)를 사용하세요: <command> | hef" +
+        [Environment]::NewLine + "hef를 적용할 수 없는 특수한 경우에만 명령에 # no-hef를 명시하고 다시 실행하세요."
     $output = @{
         hookSpecificOutput = @{
             hookEventName = "PreToolUse"
@@ -453,8 +452,8 @@ export const hef: Plugin = async () => {
       if (typeof description === "string" && HEF_OPT_OUT_PATTERN.test(description)) return
 
       throw new Error(
-        "[hef] 긴 출력이 예상되는 셸 명령에는 human-eye-filter(hef)를 붙이세요. " +
-        "권장: '<command> | hef'. 드문 예외는 description에 '[no-hef]' 또는 명령에 '# no-hef'를 명시하세요."
+        "[hef] 긴 출력이 예상되는 셸 명령에는 반드시 human-eye-filter(hef)를 사용하세요: '<command> | hef'. " +
+        "hef를 적용할 수 없는 특수한 경우에만 description에 '[no-hef]' 또는 명령에 '# no-hef'를 명시하세요."
       )
     },
   }
